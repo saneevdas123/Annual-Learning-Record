@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply bg-parchment text-ink font-sans;
+  }
+  ::selection {
+    background: rgba(178, 58, 46, 0.16);
+  }
+  *::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #cfd3e2;
+    border-radius: 9px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-indigo-100 bg-surface shadow-card;
+  }
+  .field {
+    @apply w-full rounded-lg border border-indigo-200 bg-white px-3.5 py-2.5 text-sm text-ink
+      outline-none transition placeholder:text-ink-muted/60
+      focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20;
+  }
+  .label {
+    @apply mb-1.5 block text-[13px] font-medium text-ink-soft;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold
+      transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-1
+      disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-indigo-800 text-white hover:bg-indigo-700 focus-visible:ring-indigo-500;
+  }
+  .btn-seal {
+    @apply btn bg-seal-500 text-white hover:bg-seal-600 focus-visible:ring-seal-500;
+  }
+  .btn-outline {
+    @apply btn border border-indigo-200 bg-white text-ink-soft hover:border-indigo-400 hover:bg-indigo-50;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent text-ink-soft hover:bg-indigo-50 focus-visible:ring-indigo-300;
+  }
+  .eyebrow {
+    @apply font-mono text-[11px] font-medium uppercase tracking-[0.18em] text-ink-muted;
+  }
+  /* The signature "wax seal" status disc used across the ledger. */
+  .seal-disc {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 font-mono
+      text-[11px] font-medium uppercase tracking-wide;
+  }
+}

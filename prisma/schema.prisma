@@ -1,0 +1,612 @@
+// Annual Learning Record (ALR) Platform — data model
+// Centurion University of Technology and Management
+//
+// Modeled directly from the Compiled Review + Learning Record Framework:
+//  - 12-way subject-to-record mapping, incl. multi-record combination subjects
+//  - Per-record-type weight + normalization to subject weight
+//  - Three evaluation tiers: subject-wise, year-wise, program-wise
+//  - Credit ledger (1 credit/year, Compulsory Basket)
+//  - Sequential multi-party sign-off chains, generalized across tiers
+//  - Committees, plagiarism cases, AI score + human appeal/override
+//  - Major/Capstone deliverables (multi-candidate, supervisors, Word+PDF)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Enums
+// ----------------------------------------------------------------------------
+
+enum Role {
+  STUDENT
+  FACULTY // subject teacher; signs CO sheet, does subject-wise evaluation
+  MENTOR // distinct from Faculty; signs PO/PSO attainment
+  HOD
+  DEAN
+  ADMIN
+  INDUSTRY_SUPERVISOR // external; tokenised no-login access only
+}
+
+// The twelve Framework subject configurations.
+enum CombinationCode {
+  THEORY
+  MOOC
+  PRACTICE
+  WORKSHOP
+  PROJECT
+  THESIS
+  INTERNSHIP
+  THEORY_PRACTICE
+  THEORY_PROJECT
+  THEORY_PRACTICE_PROJECT
+  PRACTICE_PROJECT
+  THEORY_MOOC // MOOC-blended theory (12th configuration)
+}
+
+// The record types a subject can require. Weights per Framework "During Program".
+enum RecordType {
+  CLASSROOM_LEARNING // Theory / MOOC — 10%
+  APPLIED_ACTION_LEARNING // Practice — 20% (scored /50 per experiment)
+  ACTION_LEARNING // Workshop / Production Unit — 30% (scored /100 per task)
+  PROJECT_REPORT // 30%
+  THESIS_REPORT // 30%
+  INTERNSHIP_REPORT // 30%
+}
+
+enum RecordStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  REVISION
+  APPROVED
+  REJECTED
+  FLAGGED // plagiarism / integrity hold
+}
+
+enum EvaluationTier {
+  SUBJECT
+  YEAR
+  PROGRAM
+}
+
+enum EvaluationStatus {
+  PENDING
+  IN_REVIEW
+  SIGNED_OFF
+  EXPORTED // pushed to exam cell
+}
+
+enum SignoffStatus {
+  PENDING
+  SIGNED
+  RETURNED
+  REJECTED
+}
+
+// The kind of artifact a sign-off chain / committee is attached to.
+enum SignoffTarget {
+  LEARNING_RECORD
+  DELIVERABLE
+  YEAR_EVALUATION
+  PROGRAM_EVALUATION
+}
+
+enum DeliverableType {
+  MINOR_PROJECT
+  MAJOR_PROJECT
+  INTERNSHIP
+  PG_THESIS
+}
+
+enum SupervisorRole {
+  SUPERVISOR
+  CO_SUPERVISOR
+  INDUSTRY
+}
+
+enum CreditBasket {
+  COMPULSORY
+  PROGRAM
+}
+
+enum PlagiarismCaseStatus {
+  OPEN
+  RESPONSE_AWAITED
+  COMMITTEE_REVIEW
+  RECOMMENDED
+  RATIFIED
+  CLOSED
+}
+
+enum AppealStatus {
+  OPEN
+  UPHELD // AI score changed
+  DENIED
+  WITHDRAWN
+}
+
+enum CompositeComponent {
+  ASSIGNMENT
+  PRESENTATION
+  MID_SEM_EXAM
+  RECORD
+}
+
+// ----------------------------------------------------------------------------
+// Org structure
+// ----------------------------------------------------------------------------
+
+model Campus {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  code        String       @unique
+  departments Department[]
+  users       User[]
+  courses     Course[]
+  createdAt   DateTime     @default(now())
+}
+
+model Department {
+  id        String    @id @default(cuid())
+  name      String
+  campus    Campus    @relation(fields: [campusId], references: [id])
+  campusId  String
+  programs  Program[]
+  users     User[]
+  courses   Course[]
+  createdAt DateTime  @default(now())
+
+  @@unique([campusId, name])
+  @@index([campusId])
+}
+
+model Program {
+  id            String     @id @default(cuid())
+  name          String // e.g. B.Tech CSE
+  degree        String // UG / PG / Diploma
+  durationYears Int        @default(4)
+  department    Department @relation(fields: [departmentId], references: [id])
+  departmentId  String
+  users         User[]
+  courses       Course[]
+  createdAt     DateTime   @default(now())
+
+  @@index([departmentId])
+}
+
+// ----------------------------------------------------------------------------
+// Users
+// ----------------------------------------------------------------------------
+
+model User {
+  id                 String   @id @default(cuid())
+  name               String
+  email              String   @unique
+  passwordHash       String
+  role               Role     @default(STUDENT)
+  registrationNumber String?  @unique
+  avatarColor        String   @default("#20223f")
+  isActive           Boolean  @default(true)
+  mfaEnabled         Boolean  @default(false)
+  eDeclarationAt     DateTime? // one-time declaration accepted (finding z)
+  bio                String?
+
+  campus       Campus?     @relation(fields: [campusId], references: [id])
+  campusId     String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  departmentId String?
+  program      Program?    @relation(fields: [programId], references: [id])
+  programId    String?
+
+  // A student has a mentor (PO/PSO signer), distinct from course faculty.
+  mentor   User?   @relation("Mentorship", fields: [mentorId], references: [id])
+  mentorId String?
+  mentees  User[]  @relation("Mentorship")
+
+  coursesTaught     Course[]           @relation("CourseFaculty")
+  enrollments       Enrollment[]
+  records           LearningRecord[]   @relation("RecordStudent")
+  reviewedRecords   LearningRecord[]   @relation("RecordReviewer")
+  signoffSteps      SignoffStep[]
+  committeeMembers  CommitteeMember[]
+  candidateOf       DeliverableCandidate[]
+  supervisorOf      DeliverableSupervisor[]
+  yearEvaluations   YearEvaluation[]
+  programEvaluation ProgramEvaluation[]
+  creditEntries     CreditLedgerEntry[]
+  appeals           ScoreAppeal[]      @relation("AppealStudent")
+  resolvedAppeals   ScoreAppeal[]      @relation("AppealResolver")
+  notifications     Notification[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([role])
+  @@index([campusId, departmentId])
+  @@index([mentorId])
+}
+
+// ----------------------------------------------------------------------------
+// Courses / subjects
+// ----------------------------------------------------------------------------
+
+model Course {
+  id              String          @id @default(cuid())
+  code            String
+  title           String
+  combinationCode CombinationCode
+  academicYear    String // e.g. 2025-26
+  term            String // e.g. Sem 3
+  credits         Int             @default(0)
+
+  campus       Campus     @relation(fields: [campusId], references: [id])
+  campusId     String
+  department   Department @relation(fields: [departmentId], references: [id])
+  departmentId String
+  program      Program    @relation(fields: [programId], references: [id])
+  programId    String
+  faculty      User       @relation("CourseFaculty", fields: [facultyId], references: [id])
+  facultyId    String
+
+  // Optional per-course override of record-type weights / normalization notes.
+  // Shape: { "APPLIED_ACTION_LEARNING": { "weightPct": 20, "perEntryMax": 50, "formula": "avg(entries)/50*20" }, ... }
+  weightConfig Json?
+
+  enrollments Enrollment[]
+  records     LearningRecord[]
+  createdAt   DateTime         @default(now())
+
+  @@unique([code, academicYear, term, programId])
+  @@index([campusId, departmentId])
+  @@index([facultyId])
+  @@index([combinationCode])
+}
+
+model Enrollment {
+  id           String   @id @default(cuid())
+  student      User     @relation(fields: [studentId], references: [id])
+  studentId    String
+  course       Course   @relation(fields: [courseId], references: [id])
+  courseId     String
+  academicYear String
+  createdAt    DateTime @default(now())
+
+  @@unique([studentId, courseId])
+  @@index([courseId])
+  @@index([studentId])
+}
+
+// ----------------------------------------------------------------------------
+// Learning records (subject-wise tier)
+// ----------------------------------------------------------------------------
+
+model LearningRecord {
+  id           String       @id @default(cuid())
+  student      User         @relation("RecordStudent", fields: [studentId], references: [id])
+  studentId    String
+  course       Course       @relation(fields: [courseId], references: [id])
+  courseId     String
+  recordType   RecordType
+  status       RecordStatus @default(DRAFT)
+  academicYear String
+  term         String
+
+  title         String
+  description   String   @db.Text
+  booksReferred String?  @db.Text // finding y
+
+  // Scoring: raw per-entry scores roll up, then normalize to subject weight.
+  rawAverage      Float? // average of entry rawScore (on the entry scale, e.g. /50 or /100)
+  perEntryMax     Int? // scale of a single entry (50 or 100)
+  subjectWeightPct Int? // 10 / 20 / 30 from Framework
+  normalizedScore Float? // rawAverage scaled into subjectWeightPct
+  normalizationNote String? // human-readable formula actually applied
+
+  // AI-assisted subject-wise evaluation + human override (findings r).
+  aiScore     Float?
+  aiModel     String?
+  aiSummary   String?  @db.Text
+  facultyScore Float? // final human-decided score
+  mentorNote   String? @db.Text
+
+  reviewedBy   User?     @relation("RecordReviewer", fields: [reviewedById], references: [id])
+  reviewedById String?
+  submittedAt  DateTime?
+  reviewedAt   DateTime?
+
+  entries    RecordEntry[]
+  components  RecordCompositeScore[]
+  appeals    ScoreAppeal[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId, academicYear])
+  @@index([courseId, status])
+  @@index([status])
+  @@index([recordType])
+}
+
+// A single experiment / task / session inside a record, carrying its own rubric.
+model RecordEntry {
+  id          String         @id @default(cuid())
+  record      LearningRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  recordId    String
+  title       String
+  content     String         @db.Text
+  // Rubric criteria → score, e.g. {"Concept":10,"Planning":9,"Result":8,"Record":10,"Viva":9}
+  rubricScores Json?
+  rawScore    Float? // total for this entry
+  maxScore    Int            @default(50) // 50 for Applied/Action Learning; 100 for Workshop
+  hoursLogged Float? // finding o — hours-based logging for Workshop/Production Unit
+  createdAt   DateTime       @default(now())
+
+  @@index([recordId])
+}
+
+// The four composite components for Classroom Learning (finding m).
+model RecordCompositeScore {
+  id        String             @id @default(cuid())
+  record    LearningRecord     @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  recordId  String
+  component CompositeComponent
+  score     Float
+  maxScore  Float              @default(100)
+
+  @@unique([recordId, component])
+}
+
+// ----------------------------------------------------------------------------
+// Major / Capstone deliverables (Project, Internship, PG Thesis)
+// ----------------------------------------------------------------------------
+
+model Deliverable {
+  id           String          @id @default(cuid())
+  type         DeliverableType
+  title        String
+  academicYear String
+  status       RecordStatus    @default(DRAFT)
+
+  wordFileUrl String? // finding w — retain Word AND pdf
+  pdfFileUrl  String?
+
+  // Plagiarism (findings j, k)
+  plagiarismScore     Float?
+  plagiarismTool      String?
+  plagiarismThreshold Int? // per-type threshold applied (Thesis 20, etc.)
+  plagiarismExclusions Json? // supervisor-certified excluded matches
+
+  rubric       Json? // applicable rubric with marks + remarks
+  coAttainment Json? // CO attainment sheet
+
+  // Internship internal/external split (finding t)
+  internalScore Float?
+  externalScore Float?
+
+  // PG Thesis paper-publication gate (finding u)
+  paperPublicationReport Json?
+
+  candidates   DeliverableCandidate[]
+  supervisors  DeliverableSupervisor[]
+  plagiarismCase PlagiarismCase?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, status])
+}
+
+model DeliverableCandidate {
+  id                 String      @id @default(cuid())
+  deliverable        Deliverable @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  deliverableId      String
+  user               User        @relation(fields: [userId], references: [id])
+  userId             String
+  registrationNumber String?
+
+  @@unique([deliverableId, userId])
+}
+
+model DeliverableSupervisor {
+  id            String         @id @default(cuid())
+  deliverable   Deliverable    @relation(fields: [deliverableId], references: [id], onDelete: Cascade)
+  deliverableId String
+  user          User           @relation(fields: [userId], references: [id])
+  userId        String
+  role          SupervisorRole
+
+  @@unique([deliverableId, userId, role])
+}
+
+// ----------------------------------------------------------------------------
+// Sign-off chains (generalized, sequential, timestamped) — finding h
+// ----------------------------------------------------------------------------
+
+model SignoffStep {
+  id          String        @id @default(cuid())
+  target      SignoffTarget
+  targetId    String // id of record / deliverable / year-eval / program-eval
+  stepOrder   Int
+  role        Role // expected signer role at this step
+  signer      User?         @relation(fields: [signerId], references: [id])
+  signerId    String?
+  status      SignoffStatus @default(PENDING)
+  note        String?
+  signedAt    DateTime?
+  createdAt   DateTime      @default(now())
+
+  @@index([target, targetId])
+  @@index([signerId, status])
+}
+
+// ----------------------------------------------------------------------------
+// Committees + year/program evaluation tiers
+// ----------------------------------------------------------------------------
+
+model Committee {
+  id        String            @id @default(cuid())
+  name      String
+  tier      EvaluationTier
+  members   CommitteeMember[]
+  yearEval  YearEvaluation?
+  programEval ProgramEvaluation?
+  createdAt DateTime          @default(now())
+}
+
+model CommitteeMember {
+  id          String    @id @default(cuid())
+  committee   Committee @relation(fields: [committeeId], references: [id], onDelete: Cascade)
+  committeeId String
+  user        User      @relation(fields: [userId], references: [id])
+  userId      String
+
+  @@unique([committeeId, userId])
+}
+
+// Year-wise evaluation (Framework tier 2): 5-criterion rubric, credit, exam-cell export.
+model YearEvaluation {
+  id           String           @id @default(cuid())
+  student      User             @relation(fields: [studentId], references: [id])
+  studentId    String
+  academicYear String
+  status       EvaluationStatus @default(PENDING)
+
+  committee   Committee? @relation(fields: [committeeId], references: [id])
+  committeeId String?    @unique
+
+  // 5-criterion, 100-mark rubric (finding c / 2.5)
+  coverageCourses    Int? // /20
+  coverageComponents Int? // /20
+  qualityContent     Int? // /20
+  aesthetics         Int? // /20
+  presentation       Int? // /20
+  totalMark          Int? // /100
+
+  creditAwarded    Float? // 1 credit/year
+  examCellExportAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([studentId, academicYear])
+  @@index([status])
+}
+
+// Program-wise evaluation (Framework tier 3): cumulated marks, final mark, credit total.
+model ProgramEvaluation {
+  id        String           @id @default(cuid())
+  student   User             @relation(fields: [studentId], references: [id])
+  studentId String           @unique
+  status    EvaluationStatus @default(PENDING)
+
+  committee   Committee? @relation(fields: [committeeId], references: [id])
+  committeeId String?    @unique
+
+  cumulatedMark    Float?
+  finalMark        Float?
+  creditTotal      Float?
+  examCellExportAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// ----------------------------------------------------------------------------
+// Credit ledger — finding f (1 credit/year, Compulsory Basket)
+// ----------------------------------------------------------------------------
+
+model CreditLedgerEntry {
+  id           String       @id @default(cuid())
+  student      User         @relation(fields: [studentId], references: [id])
+  studentId    String
+  academicYear String
+  credits      Float
+  basket       CreditBasket @default(COMPULSORY)
+  source       String       @default("ALR")
+  examCellRef  String?
+  postedAt     DateTime     @default(now())
+
+  @@unique([studentId, academicYear, source])
+  @@index([studentId])
+}
+
+// ----------------------------------------------------------------------------
+// Plagiarism case management — findings j, k, l
+// ----------------------------------------------------------------------------
+
+model PlagiarismCase {
+  id            String               @id @default(cuid())
+  deliverable   Deliverable          @relation(fields: [deliverableId], references: [id])
+  deliverableId String               @unique
+  status        PlagiarismCaseStatus @default(OPEN)
+  thresholdApplied Int
+  score         Float
+  responseDueAt DateTime?
+  recommendation String?             @db.Text
+  trail         Json? // status trail through to Academic/Management Council
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+}
+
+// Logged human appeal / override path for AI scoring — finding r
+model ScoreAppeal {
+  id        String       @id @default(cuid())
+  record    LearningRecord @relation(fields: [recordId], references: [id])
+  recordId  String
+  student   User         @relation("AppealStudent", fields: [studentId], references: [id])
+  studentId String
+  reason    String       @db.Text
+  status    AppealStatus @default(OPEN)
+
+  facultyOverrideReason String? @db.Text
+  newScore              Float?
+  resolvedBy            User?     @relation("AppealResolver", fields: [resolvedById], references: [id])
+  resolvedById          String?
+  resolvedAt            DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([status])
+  @@index([studentId])
+}
+
+// ----------------------------------------------------------------------------
+// Tokenised external access (industry supervisor) — finding s
+// ----------------------------------------------------------------------------
+
+model IndustryToken {
+  id            String    @id @default(cuid())
+  token         String    @unique
+  deliverableId String
+  email         String
+  expiresAt     DateTime
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@index([token])
+}
+
+// ----------------------------------------------------------------------------
+// Notifications
+// ----------------------------------------------------------------------------
+
+model Notification {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  title     String
+  message   String?
+  link      String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+}

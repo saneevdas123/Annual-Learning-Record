@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: alr
+      POSTGRES_PASSWORD: alr
+      POSTGRES_DB: alr
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alr -d alr"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql://alr:alr@db:5432/alr?schema=public"
+      AUTH_SECRET: "change-me-in-production"
+      SEED_ADMIN_EMAIL: "admin@cutm.ac.in"
+      SEED_ADMIN_PASSWORD: "Admin@12345"
+      # Optional AI — leave blank to disable:
+      AI_PROVIDER: ""
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+    ports:
+      - "3000:3000"
+
+volumes:
+  db_data:
