@@ -4,26 +4,31 @@ import { requireUser } from '@/lib/session';
 import { db } from '@/lib/db';
 import { RECORD_TYPES, ROLE_LABELS, type RecordType } from '@/lib/domain';
 import { aiEnabled } from '@/lib/env';
-import { SealDisc, Badge, PageHeader, Progress } from '@/components/ui';
+import { SealDisc, Badge, PageHead, Progress } from '@/components/ui';
 import { fmtDate } from '@/lib/utils';
+import { canActOnStep, canReviewRecord, currentSignoffStep } from '@/lib/access';
 import {
   addEntry,
   submitRecord,
   requestAiScore,
   reviewRecord,
   fileAppeal,
+  resolveAppeal,
 } from '../actions';
 
 export const dynamic = 'force-dynamic';
 
-export default async function RecordDetailPage({ params }: { params: { id: string } }) {
+export default async function RecordDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
+  const { id } = await params;
 
   const record = await db.learningRecord.findUnique({
-    where: { id: params.id },
+    where: { id },
     include: {
-      course: { include: { faculty: { select: { name: true } } } },
-      student: { select: { id: true, name: true, registrationNumber: true, mentorId: true } },
+      course: { include: { faculty: { select: { name: true, id: true } } } },
+      student: {
+        select: { id: true, name: true, registrationNumber: true, mentorId: true, departmentId: true, campusId: true },
+      },
       entries: { orderBy: { createdAt: 'asc' } },
       appeals: { orderBy: { createdAt: 'desc' } },
       reviewedBy: { select: { name: true, role: true } },
@@ -39,23 +44,29 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
 
   const spec = RECORD_TYPES[record.recordType as RecordType];
   const isOwner = user.id === record.student.id;
-  const isReviewer =
-    !isOwner && ['FACULTY', 'MENTOR', 'HOD', 'DEAN'].includes(user.role);
+  const assigned = canReviewRecord(user, record);
+  const step = await currentSignoffStep(record.id);
+  const canDecide = assigned && !!step && canActOnStep(user, step.role);
   const locked = ['APPROVED', 'REJECTED'].includes(record.status);
-  const canEdit = isOwner && !locked;
+  const canEdit = isOwner && ['DRAFT', 'REVISION'].includes(record.status);
 
   const entryAvg =
     record.entries.length > 0
       ? record.entries.reduce((s, e) => s + (e.rawScore ?? 0), 0) / record.entries.length
       : 0;
 
+  const openAppeals = record.appeals.filter((a) => a.status === 'OPEN');
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
-      <Link href={isOwner ? '/records' : '/review'} className="text-sm text-ink-muted hover:text-ink">
+      <Link
+        href={isOwner ? '/records' : '/review'}
+        className="text-sm font-semibold text-ink/55 hover:text-ink"
+      >
         ← Back
       </Link>
 
-      <PageHeader
+      <PageHead
         eyebrow={`${record.course.code} · ${spec.label}`}
         title={record.title}
         subtitle={`${record.academicYear} · ${record.term} · weight ${spec.weightPct}%`}
@@ -63,48 +74,42 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
-        {/* Main column */}
         <div className="space-y-6 lg:col-span-2">
-          {/* Overview */}
           <section className="card p-5">
-            <h2 className="font-display text-lg text-ink">Overview</h2>
+            <h2 className="text-lg font-bold text-ink">Overview</h2>
             {record.description ? (
-              <p className="mt-2 whitespace-pre-wrap text-sm text-ink-soft">{record.description}</p>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-ink/70">{record.description}</p>
             ) : (
-              <p className="mt-2 text-sm text-ink-muted">No description provided.</p>
+              <p className="mt-2 text-sm text-ink/45">No description provided.</p>
             )}
             {record.booksReferred && (
-              <p className="mt-3 rounded-lg border border-indigo-100 bg-white px-3 py-2 text-xs text-ink-soft">
-                <span className="font-mono uppercase tracking-wide text-ink-muted">Books / manuals</span>
-                <br />
+              <p className="ui-nest mt-3 px-3 py-2 text-xs text-ink/70">
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-ink/40">Books / manuals</span>
                 {record.booksReferred}
               </p>
             )}
             <div className="mt-4 flex flex-wrap gap-2">
               <Badge tone="muted">Scale /{spec.perEntryMax} per entry</Badge>
-              <Badge tone="brass">Subject weight {spec.weightPct}%</Badge>
+              <Badge tone="amber">Subject weight {spec.weightPct}%</Badge>
               {record.student.registrationNumber && (
-                <Badge tone="indigo">{record.student.registrationNumber}</Badge>
+                <Badge tone="blue">{record.student.registrationNumber}</Badge>
               )}
             </div>
-            <p className="mt-3 rounded-lg border border-brass-100 bg-brass-50 px-3 py-2 text-xs text-brass-600">
-              Normalization: {spec.normalization}
-            </p>
+            <p className="ui-callout-soft mt-3 px-3 py-2 text-xs">Normalization: {spec.normalization}</p>
           </section>
 
-          {/* Entries */}
           <section className="card p-5">
             <div className="flex items-center justify-between">
-              <h2 className="font-display text-lg text-ink">
+              <h2 className="text-lg font-bold text-ink">
                 {spec.entryBased ? 'Experiments / tasks' : 'Assessment components'}
               </h2>
-              <span className="font-mono text-xs text-ink-muted">
+              <span className="text-xs font-semibold text-ink/45">
                 {record.entries.length} · avg {entryAvg.toFixed(1)}/{spec.perEntryMax}
               </span>
             </div>
 
             {record.entries.length === 0 ? (
-              <p className="mt-3 text-sm text-ink-muted">
+              <p className="mt-3 text-sm text-ink/45">
                 No entries recorded yet{canEdit ? ' — add the first below.' : '.'}
               </p>
             ) : (
@@ -112,31 +117,24 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
                 {record.entries.map((e, i) => {
                   const rubric = (e.rubricScores as Record<string, number> | null) ?? {};
                   return (
-                    <li key={e.id} className="rounded-lg border border-indigo-100 bg-white p-3">
+                    <li key={e.id} className="ui-nest p-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-ink">
+                        <span className="text-sm font-semibold text-ink">
                           {String(i + 1).padStart(2, '0')} · {e.title}
                         </span>
-                        <span className="font-mono text-sm text-ink">
+                        <span className="text-sm font-bold text-ink">
                           {e.rawScore ?? 0}
-                          <span className="text-ink-muted">/{e.maxScore}</span>
+                          <span className="text-ink/45">/{e.maxScore}</span>
                         </span>
                       </div>
-                      {e.content && <p className="mt-1 text-xs text-ink-soft">{e.content}</p>}
+                      {e.content && <p className="mt-1 text-xs text-ink/60">{e.content}</p>}
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {Object.entries(rubric).map(([k, v]) => (
-                          <span
-                            key={k}
-                            className="rounded border border-indigo-100 bg-indigo-50 px-1.5 py-0.5 font-mono text-[10px] text-ink-muted"
-                          >
+                          <span key={k} className="badge">
                             {k}: {v}
                           </span>
                         ))}
-                        {e.hoursLogged != null && (
-                          <span className="rounded border border-brass-100 bg-brass-50 px-1.5 py-0.5 font-mono text-[10px] text-brass-600">
-                            {e.hoursLogged}h
-                          </span>
-                        )}
+                        {e.hoursLogged != null && <Badge tone="amber">{e.hoursLogged}h</Badge>}
                       </div>
                     </li>
                   );
@@ -145,7 +143,7 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
             )}
 
             {canEdit && (
-              <form action={addEntry} className="mt-4 space-y-3 border-t border-indigo-100 pt-4">
+              <form action={addEntry} className="mt-4 space-y-3 border-t border-ink/10 pt-4">
                 <input type="hidden" name="recordId" value={record.id} />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -153,66 +151,70 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
                     <input
                       name="entryTitle"
                       required
-                      className="field"
+                      className="input"
                       placeholder={spec.entryBased ? 'e.g. Experiment 3' : 'e.g. Assessment'}
                     />
                   </div>
                   {spec.hoursBased && (
                     <div>
                       <label className="label">Hours logged</label>
-                      <input name="hours" type="number" min="0" step="0.5" className="field" placeholder="0" />
+                      <input name="hours" type="number" min="0" step="0.5" className="input" placeholder="0" />
                     </div>
                   )}
                 </div>
                 <div>
                   <label className="label">Notes</label>
-                  <textarea name="entryContent" className="field min-h-[70px] resize-y" placeholder="What was done, observed, concluded." />
+                  <textarea name="entryContent" className="input" placeholder="What was done, observed, concluded." />
                 </div>
                 <div>
                   <p className="label">Rubric ({spec.perEntryMax} total)</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {spec.rubric.map((c) => (
-                      <label key={c.criterion} className="flex items-center justify-between gap-2 rounded-lg border border-indigo-100 bg-white px-3 py-1.5">
-                        <span className="text-xs text-ink-soft">{c.criterion}</span>
+                      <label key={c.criterion} className="ui-nest flex items-center justify-between gap-2 px-3 py-1.5">
+                        <span className="text-xs text-ink/70">{c.criterion}</span>
                         <input
                           name={`rubric_${c.criterion}`}
                           type="number"
                           min="0"
                           max={c.max}
                           defaultValue={0}
-                          className="w-16 rounded border border-indigo-200 px-2 py-1 text-right font-mono text-sm"
+                          className="input !w-16 !px-2 !py-1 text-right"
                         />
-                        <span className="font-mono text-[10px] text-ink-muted">/{c.max}</span>
+                        <span className="text-[10px] font-bold text-ink/40">/{c.max}</span>
                       </label>
                     ))}
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <button className="btn-outline">Add entry</button>
+                  <button className="btn-ghost">Add entry</button>
                 </div>
               </form>
             )}
           </section>
 
-          {/* AI + faculty review */}
-          {(record.aiSummary || isReviewer) && (
+          {(record.aiSummary || assigned) && (
             <section className="card p-5">
-              <h2 className="font-display text-lg text-ink">Evaluation</h2>
+              <h2 className="text-lg font-bold text-ink">Evaluation</h2>
 
               {record.aiSummary && (
-                <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
-                  <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wide text-indigo-700">
+                <div className="ui-callout mt-3 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-ink/55">
                     AI advisory · score {record.aiScore}/{spec.perEntryMax}
                   </p>
-                  <p className="mt-1 text-sm text-ink-soft">{record.aiSummary}</p>
-                  <p className="mt-1 text-[11px] text-ink-muted">
+                  <p className="mt-1 text-sm text-ink/70">{record.aiSummary}</p>
+                  <p className="mt-1 text-[11px] text-ink/45">
                     Advisory only — the faculty score below is authoritative and always overrides AI.
                   </p>
                 </div>
               )}
 
-              {isReviewer && !locked && (
+              {canDecide && !locked && (
                 <div className="mt-4 space-y-4">
+                  {step && (
+                    <p className="text-xs font-semibold text-ink/50">
+                      Current step: {ROLE_LABELS[step.role] ?? step.role}
+                    </p>
+                  )}
                   {aiEnabled && !record.aiSummary && (
                     <form action={requestAiScore}>
                       <input type="hidden" name="recordId" value={record.id} />
@@ -220,29 +222,31 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
                     </form>
                   )}
 
-                  <form action={reviewRecord} className="space-y-3 border-t border-indigo-100 pt-4">
+                  <form action={reviewRecord} className="space-y-3 border-t border-ink/10 pt-4">
                     <input type="hidden" name="recordId" value={record.id} />
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <div>
-                        <label className="label">Final score (out of {spec.perEntryMax})</label>
-                        <input
-                          name="facultyScore"
-                          type="number"
-                          min="0"
-                          max={spec.perEntryMax}
-                          step="0.5"
-                          required
-                          defaultValue={record.facultyScore ?? Math.round(entryAvg)}
-                          className="field font-mono"
-                        />
-                        <p className="mt-1 text-[11px] text-ink-muted">
-                          Normalizes to {spec.weightPct}% of the subject.
-                        </p>
-                      </div>
+                      {step?.role === 'FACULTY' && (
+                        <div>
+                          <label className="label">Final score (out of {spec.perEntryMax})</label>
+                          <input
+                            name="facultyScore"
+                            type="number"
+                            min="0"
+                            max={spec.perEntryMax}
+                            step="0.5"
+                            required
+                            defaultValue={record.facultyScore ?? Math.round(entryAvg)}
+                            className="input"
+                          />
+                          <p className="ui-field-hint">Normalizes to {spec.weightPct}% of the subject.</p>
+                        </div>
+                      )}
                       <div>
                         <label className="label">Decision</label>
-                        <select name="decision" className="field" defaultValue="APPROVED">
-                          <option value="APPROVED">Approve &amp; sign off</option>
+                        <select name="decision" className="input" defaultValue="APPROVED">
+                          <option value="APPROVED">
+                            {step?.role === 'HOD' || step?.role === 'DEAN' ? 'Approve & sign off' : 'Approve & advance'}
+                          </option>
                           <option value="REVISION">Return for revision</option>
                           <option value="REJECTED">Reject</option>
                         </select>
@@ -250,51 +254,89 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
                     </div>
                     <div>
                       <label className="label">Reviewer note</label>
-                      <textarea name="mentorNote" className="field min-h-[60px] resize-y" placeholder="Optional feedback for the student." defaultValue={record.mentorNote ?? ''} />
+                      <textarea
+                        name="mentorNote"
+                        className="input"
+                        placeholder="Optional feedback for the student."
+                        defaultValue={record.mentorNote ?? ''}
+                      />
                     </div>
                     <div className="flex justify-end">
-                      <button className="btn-seal">Record decision</button>
+                      <button className="btn-primary">Record decision</button>
                     </div>
                   </form>
                 </div>
               )}
 
+              {assigned && !canDecide && !locked && (
+                <p className="mt-3 text-sm text-ink/50">Waiting for the current sign-off step before you can act.</p>
+              )}
+
               {record.facultyScore != null && (
-                <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                  <p className="font-mono text-[11px] uppercase tracking-wide text-emerald-700">
+                <div className="ui-callout-ok mt-4 p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-wide">
                     Final score {record.facultyScore}/{spec.perEntryMax}
                     {record.reviewedBy && ` · by ${record.reviewedBy.name}`}
                   </p>
                   {record.normalizedScore != null && (
                     <p className="mt-1 text-sm text-ink">
-                      Normalized: <span className="font-mono">{record.normalizedScore}</span> of {record.subjectWeightPct}% subject weight
+                      Normalized: <span className="font-bold">{record.normalizedScore}</span> of{' '}
+                      {record.subjectWeightPct}% subject weight
                     </p>
                   )}
                   {record.normalizationNote && (
-                    <p className="mt-1 font-mono text-[11px] text-ink-muted">{record.normalizationNote}</p>
+                    <p className="mt-1 text-[11px] text-ink/50">{record.normalizationNote}</p>
                   )}
-                  {record.mentorNote && <p className="mt-2 text-sm text-ink-soft">“{record.mentorNote}”</p>}
+                  {record.mentorNote && <p className="mt-2 text-sm text-ink/70">“{record.mentorNote}”</p>}
                 </div>
               )}
             </section>
           )}
 
-          {/* Appeal (finding r) */}
+          {openAppeals.length > 0 && assigned && (
+            <section className="card p-5">
+              <h2 className="text-lg font-bold text-ink">Open appeal</h2>
+              {openAppeals.map((a) => (
+                <form key={a.id} action={resolveAppeal} className="mt-3 space-y-3">
+                  <input type="hidden" name="appealId" value={a.id} />
+                  <p className="ui-nest p-3 text-sm text-ink/70">{a.reason}</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="label">Decision</label>
+                      <select name="decision" className="input" defaultValue="DENIED">
+                        <option value="UPHELD">Uphold (change score)</option>
+                        <option value="DENIED">Deny</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">New score</label>
+                      <input name="newScore" type="number" min="0" max={spec.perEntryMax} step="0.5" className="input" />
+                    </div>
+                  </div>
+                  <textarea name="facultyOverrideReason" className="input" placeholder="Resolution note" />
+                  <div className="flex justify-end">
+                    <button className="btn-primary">Resolve appeal</button>
+                  </div>
+                </form>
+              ))}
+            </section>
+          )}
+
           {isOwner && record.reviewedById && (
             <section className="card p-5">
-              <h2 className="font-display text-lg text-ink">Appeal the score</h2>
-              <p className="mt-1 text-sm text-ink-muted">
+              <h2 className="text-lg font-bold text-ink">Appeal the score</h2>
+              <p className="mt-1 text-sm text-ink/55">
                 Disagree with the evaluation? File an appeal — it is logged and resolved by a human reviewer.
               </p>
               {record.appeals.length > 0 && (
                 <ul className="mt-3 space-y-2">
                   {record.appeals.map((a) => (
-                    <li key={a.id} className="rounded-lg border border-indigo-100 bg-white p-3 text-sm">
-                      <div className="flex items-center justify-between">
-                        <span className="text-ink-soft">{a.reason}</span>
+                    <li key={a.id} className="ui-nest p-3 text-sm">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-ink/70">{a.reason}</span>
                         <SealDisc status={a.status} />
                       </div>
-                      <p className="mt-1 font-mono text-[10px] text-ink-muted">{fmtDate(a.createdAt)}</p>
+                      <p className="mt-1 text-[10px] font-semibold text-ink/40">{fmtDate(a.createdAt)}</p>
                     </li>
                   ))}
                 </ul>
@@ -302,9 +344,14 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
               {record.appeals.every((a) => a.status !== 'OPEN') && (
                 <form action={fileAppeal} className="mt-3 space-y-3">
                   <input type="hidden" name="recordId" value={record.id} />
-                  <textarea name="reason" required className="field min-h-[70px] resize-y" placeholder="Explain why you believe the score should be reviewed." />
+                  <textarea
+                    name="reason"
+                    required
+                    className="input"
+                    placeholder="Explain why you believe the score should be reviewed."
+                  />
                   <div className="flex justify-end">
-                    <button className="btn-outline">Submit appeal</button>
+                    <button className="btn-ghost">Submit appeal</button>
                   </div>
                 </form>
               )}
@@ -312,31 +359,33 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
           )}
         </div>
 
-        {/* Sidebar */}
         <div className="space-y-6">
-          {/* Submit */}
           {isOwner && ['DRAFT', 'REVISION'].includes(record.status) && (
             <section className="card p-5">
-              <h3 className="font-display text-base text-ink">Ready to submit?</h3>
-              <p className="mt-1 text-sm text-ink-muted">
+              <h3 className="font-bold text-ink">Ready to submit?</h3>
+              <p className="mt-1 text-sm text-ink/55">
                 Submitting opens the sign-off chain: faculty, then mentor, then HoD.
               </p>
+              {!user.eDeclarationAt && (
+                <p className="ui-callout-warn mt-3 p-3 text-xs">
+                  Accept the declaration on your profile first.
+                </p>
+              )}
               <form action={submitRecord} className="mt-3">
                 <input type="hidden" name="recordId" value={record.id} />
-                <button className="btn-primary w-full">Submit for review</button>
+                <button className="btn-primary w-full" disabled={!user.eDeclarationAt}>
+                  Submit for review
+                </button>
               </form>
             </section>
           )}
 
-          {/* Score summary */}
           <section className="card p-5">
-            <h3 className="font-display text-base text-ink">Subject contribution</h3>
+            <h3 className="font-bold text-ink">Subject contribution</h3>
             <div className="mt-3">
               <div className="flex items-end justify-between">
-                <span className="font-mono text-3xl font-semibold text-ink">
-                  {record.normalizedScore ?? '—'}
-                </span>
-                <span className="font-mono text-sm text-ink-muted">/ {spec.weightPct}%</span>
+                <span className="text-3xl font-bold text-ink">{record.normalizedScore ?? '—'}</span>
+                <span className="text-sm text-ink/45">/ {spec.weightPct}%</span>
               </div>
               <div className="mt-2">
                 <Progress value={record.normalizedScore ?? 0} max={spec.weightPct} />
@@ -344,33 +393,30 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
             </div>
           </section>
 
-          {/* Sign-off chain (finding h) */}
           <section className="card p-5">
-            <h3 className="font-display text-base text-ink">Sign-off chain</h3>
+            <h3 className="font-bold text-ink">Sign-off chain</h3>
             {steps.length === 0 ? (
-              <p className="mt-2 text-sm text-ink-muted">Opens once the record is submitted.</p>
+              <p className="mt-2 text-sm text-ink/45">Opens once the record is submitted.</p>
             ) : (
               <ol className="mt-3 space-y-3">
                 {steps.map((s) => (
                   <li key={s.id} className="flex items-start gap-3">
                     <span
                       className={
-                        'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[11px] ' +
-                        (s.status === 'SIGNED'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-indigo-100 text-ink-muted')
+                        'mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ' +
+                        (s.status === 'SIGNED' ? 'bg-accent-mint text-ink' : 'bg-ink/8 text-ink/50')
                       }
                     >
                       {s.stepOrder}
                     </span>
                     <span className="min-w-0">
-                      <span className="block text-sm font-medium text-ink">
-                        {ROLE_LABELS[s.role] ?? s.role}
-                      </span>
-                      <span className="block font-mono text-[11px] text-ink-muted">
+                      <span className="block text-sm font-semibold text-ink">{ROLE_LABELS[s.role] ?? s.role}</span>
+                      <span className="block text-[11px] text-ink/45">
                         {s.status === 'SIGNED'
                           ? `Signed by ${s.signer?.name ?? '—'} · ${fmtDate(s.signedAt)}`
-                          : 'Pending'}
+                          : s.status === 'PENDING'
+                            ? 'Pending'
+                            : s.status}
                       </span>
                     </span>
                   </li>
@@ -380,22 +426,22 @@ export default async function RecordDetailPage({ params }: { params: { id: strin
           </section>
 
           <section className="card p-5">
-            <h3 className="font-display text-base text-ink">Details</h3>
+            <h3 className="font-bold text-ink">Details</h3>
             <dl className="mt-2 space-y-1.5 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-ink-muted">Student</dt>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink/45">Student</dt>
                 <dd className="text-ink">{record.student.name}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-ink-muted">Faculty</dt>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink/45">Faculty</dt>
                 <dd className="text-ink">{record.course.faculty.name}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-ink-muted">Submitted</dt>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink/45">Submitted</dt>
                 <dd className="text-ink">{fmtDate(record.submittedAt)}</dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-ink-muted">Reviewed</dt>
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink/45">Reviewed</dt>
                 <dd className="text-ink">{fmtDate(record.reviewedAt)}</dd>
               </div>
             </dl>

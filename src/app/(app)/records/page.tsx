@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { requireRole } from '@/lib/session';
 import { db } from '@/lib/db';
-import { SealDisc, EmptyState, PageHeader, Badge } from '@/components/ui';
+import { SealDisc, EmptyState, PageHead, Badge } from '@/components/ui';
 import { RECORD_TYPES } from '@/lib/domain';
 import { fmtDate } from '@/lib/utils';
 
@@ -17,7 +17,7 @@ export default async function RecordsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
+      <PageHead
         eyebrow="The ledger"
         title="My learning records"
         subtitle={`${records.length} ${records.length === 1 ? 'record' : 'records'} across your courses.`}
@@ -34,31 +34,55 @@ export default async function RecordsPage() {
           }
         />
       ) : (
-        <div className="card divide-y divide-indigo-100 overflow-hidden">
-          {records.map((r, i) => (
-            <Link
-              key={r.id}
-              href={`/records/${r.id}`}
-              className="flex items-center gap-4 px-5 py-4 hover:bg-indigo-50/40"
-            >
-              <span className="hidden font-mono text-xs text-ink-muted sm:block">
-                {String(i + 1).padStart(2, '0')}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="truncate font-medium text-ink">{r.title}</span>
-                  <Badge tone="muted">{RECORD_TYPES[r.recordType].label}</Badge>
-                </span>
-                <span className="mt-0.5 block font-mono text-[11px] uppercase tracking-wide text-ink-muted">
+        <>
+          <div className="hidden md:block table-wrap">
+            <table className="w-full">
+              <thead>
+                <tr>
+                  <th className="th">Record</th>
+                  <th className="th">Course</th>
+                  <th className="th">Updated</th>
+                  <th className="th">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {records.map((r) => (
+                  <tr key={r.id}>
+                    <td className="td">
+                      <Link href={`/records/${r.id}`} className="font-semibold hover:text-brand">
+                        {r.title}
+                      </Link>
+                      <div className="mt-0.5">
+                        <Badge tone="muted">{RECORD_TYPES[r.recordType].label}</Badge>
+                      </div>
+                    </td>
+                    <td className="td text-ink/60">
+                      {r.course.code}
+                      {r.normalizedScore != null && ` · ${r.normalizedScore}/${r.subjectWeightPct}`}
+                    </td>
+                    <td className="td text-ink/55">{fmtDate(r.updatedAt)}</td>
+                    <td className="td">
+                      <SealDisc status={r.status} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="md:hidden space-y-2">
+            {records.map((r) => (
+              <Link key={r.id} href={`/records/${r.id}`} className="ui-nest block p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="font-semibold text-ink">{r.title}</span>
+                  <SealDisc status={r.status} />
+                </div>
+                <p className="mt-1 text-xs text-ink/50">
                   {r.course.code} · {r.academicYear}
-                  {r.normalizedScore != null && ` · scored ${r.normalizedScore}/${r.subjectWeightPct}`}
-                </span>
-              </span>
-              <span className="hidden text-xs text-ink-muted md:block">{fmtDate(r.updatedAt)}</span>
-              <SealDisc status={r.status} />
-            </Link>
-          ))}
-        </div>
+                </p>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

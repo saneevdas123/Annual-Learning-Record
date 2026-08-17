@@ -2,14 +2,25 @@ import Link from 'next/link';
 import { requireUser } from '@/lib/session';
 import { db } from '@/lib/db';
 import { COMBINATIONS, requiredRecordTypes, RECORD_TYPES } from '@/lib/domain';
-import { PageHeader, EmptyState, Badge } from '@/components/ui';
+import { PageHead, EmptyState, Badge } from '@/components/ui';
+import { courseOrgWhere } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
 export default async function CoursesPage() {
   const user = await requireUser();
 
-  let courses: any[] = [];
+  let courses: Array<{
+    id: string;
+    code: string;
+    title: string;
+    combinationCode: string;
+    academicYear: string;
+    term: string;
+    credits: number;
+    faculty?: { name: string };
+    _count?: { enrollments: number; records: number };
+  }> = [];
   let subtitle = '';
 
   if (user.role === 'STUDENT') {
@@ -20,25 +31,22 @@ export default async function CoursesPage() {
     });
     courses = enrollments.map((e) => e.course);
     subtitle = 'The courses you are enrolled in and their required learning records.';
-  } else if (user.role === 'FACULTY') {
-    courses = await db.course.findMany({
-      where: { facultyId: user.id },
-      include: { faculty: { select: { name: true } }, _count: { select: { enrollments: true, records: true } } },
-      orderBy: { createdAt: 'desc' },
-    });
-    subtitle = 'Courses you teach. Open one to see submissions and required records.';
   } else {
     courses = await db.course.findMany({
+      where: courseOrgWhere(user),
       include: { faculty: { select: { name: true } }, _count: { select: { enrollments: true, records: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     });
-    subtitle = 'All courses across the institution.';
+    subtitle =
+      user.role === 'FACULTY'
+        ? 'Courses you teach. Open one to see submissions and required records.'
+        : 'Courses in your scope.';
   }
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow="Catalogue" title="Courses" subtitle={subtitle} />
+      <PageHead eyebrow="Catalogue" title="Courses" subtitle={subtitle} />
 
       {courses.length === 0 ? (
         <EmptyState
@@ -62,27 +70,24 @@ export default async function CoursesPage() {
             const combo = COMBINATIONS[c.combinationCode as keyof typeof COMBINATIONS];
             const reqs = requiredRecordTypes(c.combinationCode as never);
             return (
-              <Link key={c.id} href={`/courses/${c.id}`} className="card p-5 transition hover:shadow-lift">
+              <Link key={c.id} href={`/courses/${c.id}`} className="card land-card p-5">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-xs text-ink-muted">{c.code}</span>
-                  <Badge tone="indigo">{combo?.label ?? c.combinationCode}</Badge>
+                  <span className="text-xs font-bold text-ink/45">{c.code}</span>
+                  <Badge tone="blue">{combo?.label ?? c.combinationCode}</Badge>
                 </div>
-                <h3 className="mt-1 font-display text-lg text-ink">{c.title}</h3>
-                <p className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">
+                <h3 className="mt-1 text-lg font-bold text-ink">{c.title}</h3>
+                <p className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
                   {c.academicYear} · {c.term} · {c.credits} cr
                 </p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {reqs.map((t) => (
-                    <span
-                      key={t}
-                      className="rounded border border-brass-100 bg-brass-50 px-1.5 py-0.5 font-mono text-[10px] text-brass-600"
-                    >
+                    <Badge key={t} tone="amber">
                       {RECORD_TYPES[t].label} · {RECORD_TYPES[t].weightPct}%
-                    </span>
+                    </Badge>
                   ))}
                 </div>
                 {c._count && (
-                  <p className="mt-3 font-mono text-[11px] text-ink-muted">
+                  <p className="mt-3 text-[11px] font-semibold text-ink/45">
                     {c._count.enrollments} enrolled · {c._count.records} records
                   </p>
                 )}

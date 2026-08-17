@@ -1,39 +1,43 @@
-import type { Metadata } from 'next';
-import { Fraunces, Inter, IBM_Plex_Mono } from 'next/font/google';
+import type { Metadata, Viewport } from 'next';
+import { Outfit } from 'next/font/google';
 import './globals.css';
+import AppToaster from '@/components/AppToaster';
 
-const fraunces = Fraunces({
+const outfit = Outfit({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-fraunces',
-  display: 'swap',
-});
-const inter = Inter({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-inter',
-  display: 'swap',
-});
-const plexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
-  variable: '--font-plex-mono',
+  variable: '--font-outfit',
   display: 'swap',
 });
 
 export const metadata: Metadata = {
-  title: 'ALR — Annual Learning Record | Centurion University',
+  title: {
+    default: 'ALR — Annual Learning Record | Centurion University',
+    template: '%s · ALR',
+  },
   description:
     'The Annual Learning Record platform for Centurion University of Technology and Management — recording, evaluating, and crediting student learning across the program.',
+  applicationName: 'ALR',
+  other: {
+    'theme-color': '#FF4B3E',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#FF4B3E' },
+    { media: '(prefers-color-scheme: dark)', color: '#141414' },
+  ],
+  width: 'device-width',
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html
-      lang="en"
-      className={`${fraunces.variable} ${inter.variable} ${plexMono.variable}`}
-    >
-      <body>{children}</body>
+    <html lang="en" className={outfit.variable} suppressHydrationWarning>
+      <body className="font-sans antialiased bg-cream text-ink" suppressHydrationWarning>
+        {children}
+        <AppToaster />
+      </body>
     </html>
   );
 }

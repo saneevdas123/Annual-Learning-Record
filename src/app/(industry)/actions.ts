@@ -2,30 +2,40 @@
 
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
+import { fail, ok } from '@/lib/action-result';
 
-// External industry supervisor submits an assessment using only a signed token —
-// no account required (finding s). The token authorizes exactly one deliverable.
-export async function submitIndustryAssessment(formData: FormData) {
+export async function submitIndustryAssessment(formData: FormData): Promise<void> {
   const token = String(formData.get('token'));
   const externalScore = Number(formData.get('externalScore') ?? 0) || 0;
   const feedback = String(formData.get('feedback') ?? '');
 
   const rec = await db.industryToken.findUnique({ where: { token } });
-  if (!rec) throw new Error('Invalid token');
-  if (rec.expiresAt < new Date()) throw new Error('This link has expired.');
+  if (!rec) return fail('Invalid token.');
+  if (rec.expiresAt < new Date()) return fail('This link has expired.');
+  if (rec.usedAt) return fail('This assessment has already been submitted.');
 
   const deliverable = await db.deliverable.findUnique({ where: { id: rec.deliverableId } });
-  if (!deliverable) throw new Error('Deliverable not found');
+  if (!deliverable) return fail('Deliverable not found.');
 
   const rubric = (deliverable.rubric as Record<string, unknown> | null) ?? {};
-  await db.deliverable.update({
-    where: { id: rec.deliverableId },
-    data: {
-      externalScore,
-      rubric: { ...rubric, industryFeedback: feedback, industrySupervisorEmail: rec.email },
-    },
-  });
-  await db.industryToken.update({ where: { token }, data: { usedAt: new Date() } });
+  try {
+    await db.$transaction([
+      db.deliverable.update({
+        where: { id: rec.deliverableId },
+        data: {
+          externalScore,
+          rubric: { ...rubric, industryFeedback: feedback, industrySupervisorEmail: rec.email },
+        },
+      }),
+      db.industryToken.update({
+        where: { token },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+  } catch {
+    return fail('Could not submit the assessment.');
+  }
 
   revalidatePath(`/industry/${token}`);
+  return ok();
 }

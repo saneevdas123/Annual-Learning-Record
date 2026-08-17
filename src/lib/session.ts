@@ -20,7 +20,7 @@ export interface CurrentUser {
 // Reads the session cookie, verifies the JWT, and loads the user.
 // Returns null if not authenticated. Cached per-request by React.
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const token = cookies().get(SESSION_COOKIE)?.value;
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const payload = await verifySessionToken(token);
   if (!payload?.sub) return null;

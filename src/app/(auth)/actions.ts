@@ -11,23 +11,24 @@ import {
   hashPassword,
   verifyPassword,
 } from '@/lib/auth';
+import { safeNextPath, type ActionResult } from '@/lib/action-result';
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  next: z.string().optional(),
 });
 
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(8, 'Password must be at least 8 characters'),
-  role: z.enum(['STUDENT', 'FACULTY', 'MENTOR']).default('STUDENT'),
   registrationNumber: z.string().optional(),
 });
 
 async function setSession(user: { id: string; role: string; name: string }) {
   const token = await createSessionToken({ sub: user.id, role: user.role, name: user.name });
-  cookies().set(SESSION_COOKIE, token, {
+  (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
@@ -36,12 +37,11 @@ async function setSession(user: { id: string; role: string; name: string }) {
   });
 }
 
-export type ActionState = { error?: string } | undefined;
-
-export async function loginAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
+export async function loginAction(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
   const parsed = loginSchema.safeParse({
     email: formData.get('email'),
     password: formData.get('password'),
+    next: formData.get('next') || undefined,
   });
   if (!parsed.success) return { error: 'Enter a valid email and password.' };
 
@@ -52,31 +52,29 @@ export async function loginAction(_prev: ActionState, formData: FormData): Promi
   if (!ok) return { error: 'Invalid credentials.' };
 
   await setSession(user);
-  redirect('/dashboard');
+  redirect(safeNextPath(parsed.data.next));
 }
 
 export async function registerAction(
-  _prev: ActionState,
+  _prev: ActionResult,
   formData: FormData
-): Promise<ActionState> {
+): Promise<ActionResult> {
   const parsed = registerSchema.safeParse({
     name: formData.get('name'),
     email: formData.get('email'),
     password: formData.get('password'),
-    role: formData.get('role') || 'STUDENT',
     registrationNumber: formData.get('registrationNumber') || undefined,
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? 'Please check the form.' };
   }
-  const { name, email, password, role, registrationNumber } = parsed.data;
+  const { name, email, password, registrationNumber } = parsed.data;
 
   const existing = await db.user.findUnique({ where: { email: email.toLowerCase() } });
   if (existing) return { error: 'An account with that email already exists.' };
 
-  // The very first account created becomes an administrator.
   const count = await db.user.count();
-  const finalRole = count === 0 ? 'ADMIN' : role;
+  const finalRole = count === 0 ? 'ADMIN' : 'STUDENT';
 
   const user = await db.user.create({
     data: {
@@ -93,6 +91,6 @@ export async function registerAction(
 }
 
 export async function logoutAction() {
-  cookies().delete(SESSION_COOKIE);
+  (await cookies()).delete(SESSION_COOKIE);
   redirect('/login');
 }

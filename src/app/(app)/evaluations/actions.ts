@@ -5,12 +5,7 @@ import { z } from 'zod';
 import { db } from '@/lib/db';
 import { requireRole } from '@/lib/session';
 import { ALR_CREDITS_PER_YEAR } from '@/lib/domain';
-
-// ---------------------------------------------------------------------------
-// Year-wise evaluation (Framework tier 2): the Dean's committee scores the
-// annual record against the 5-criterion / 100-mark rubric, signs off, awards
-// the 1 credit into the Compulsory Basket, and exports to the exam cell.
-// ---------------------------------------------------------------------------
+import { fail, ok } from '@/lib/action-result';
 
 const rubricSchema = z.object({
   studentId: z.string().min(1),
@@ -22,9 +17,9 @@ const rubricSchema = z.object({
   presentation: z.coerce.number().min(0).max(20),
 });
 
-export async function saveYearEvaluation(formData: FormData) {
+export async function saveYearEvaluation(formData: FormData): Promise<void> {
   await requireRole('HOD', 'DEAN', 'ADMIN');
-  const p = rubricSchema.parse({
+  const parsed = rubricSchema.safeParse({
     studentId: formData.get('studentId'),
     academicYear: formData.get('academicYear'),
     coverageCourses: formData.get('coverageCourses'),
@@ -33,6 +28,8 @@ export async function saveYearEvaluation(formData: FormData) {
     aesthetics: formData.get('aesthetics'),
     presentation: formData.get('presentation'),
   });
+  if (!parsed.success) return fail('Check the rubric scores.');
+  const p = parsed.data;
   const total =
     p.coverageCourses + p.coverageComponents + p.qualityContent + p.aesthetics + p.presentation;
 
@@ -60,25 +57,24 @@ export async function saveYearEvaluation(formData: FormData) {
     },
   });
   revalidatePath('/evaluations');
+  return ok();
 }
 
-// Sign off the year evaluation and post the annual credit to the ledger.
-export async function signoffYearEvaluation(formData: FormData) {
-  const user = await requireRole('HOD', 'DEAN', 'ADMIN');
+export async function signoffYearEvaluation(formData: FormData): Promise<void> {
+  await requireRole('HOD', 'DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
   const academicYear = String(formData.get('academicYear'));
 
   const evaln = await db.yearEvaluation.findUnique({
     where: { studentId_academicYear: { studentId, academicYear } },
   });
-  if (!evaln || evaln.totalMark == null) throw new Error('Score the rubric before signing off.');
+  if (!evaln || evaln.totalMark == null) return fail('Score the rubric before signing off.');
 
   await db.yearEvaluation.update({
     where: { studentId_academicYear: { studentId, academicYear } },
     data: { status: 'SIGNED_OFF', creditAwarded: ALR_CREDITS_PER_YEAR },
   });
 
-  // Post the credit (idempotent on [studentId, academicYear, source]).
   await db.creditLedgerEntry.upsert({
     where: {
       studentId_academicYear_source: { studentId, academicYear, source: 'ALR' },
@@ -104,10 +100,10 @@ export async function signoffYearEvaluation(formData: FormData) {
 
   revalidatePath('/evaluations');
   revalidatePath('/credits');
+  return ok();
 }
 
-// Export a signed-off evaluation to the exam cell (records the export stamp).
-export async function exportYearEvaluation(formData: FormData) {
+export async function exportYearEvaluation(formData: FormData): Promise<void> {
   await requireRole('DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
   const academicYear = String(formData.get('academicYear'));
@@ -121,14 +117,10 @@ export async function exportYearEvaluation(formData: FormData) {
     data: { examCellRef: `EXAMCELL-${academicYear}-${studentId.slice(-6).toUpperCase()}` },
   });
   revalidatePath('/evaluations');
+  return ok();
 }
 
-// ---------------------------------------------------------------------------
-// Program-wise evaluation (Framework tier 3): cumulate all signed-off annual
-// marks into a final program mark + total credit, then export.
-// ---------------------------------------------------------------------------
-
-export async function compileProgramEvaluation(formData: FormData) {
+export async function compileProgramEvaluation(formData: FormData): Promise<void> {
   await requireRole('DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
 
@@ -146,9 +138,10 @@ export async function compileProgramEvaluation(formData: FormData) {
     update: { status: 'IN_REVIEW', cumulatedMark: cumulated, finalMark, creditTotal },
   });
   revalidatePath('/evaluations');
+  return ok();
 }
 
-export async function exportProgramEvaluation(formData: FormData) {
+export async function exportProgramEvaluation(formData: FormData): Promise<void> {
   await requireRole('DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
   await db.programEvaluation.update({
@@ -156,4 +149,5 @@ export async function exportProgramEvaluation(formData: FormData) {
     data: { status: 'EXPORTED', examCellExportAt: new Date() },
   });
   revalidatePath('/evaluations');
+  return ok();
 }

@@ -2,11 +2,12 @@ import { db } from '@/lib/db';
 import { DELIVERABLE_LABEL } from '@/lib/labels';
 import { submitIndustryAssessment } from '../../actions';
 import { fmtDate } from '@/lib/utils';
+import GooglyEyes from '@/components/GooglyEyes';
 
 export const dynamic = 'force-dynamic';
 
-export default async function IndustryTokenPage({ params }: { params: { token: string } }) {
-  const token = params.token;
+export default async function IndustryTokenPage({ params }: { params: Promise<{ token: string }> }) {
+  const { token } = await params;
   const rec = await db.industryToken.findUnique({ where: { token } });
 
   const invalid = !rec || rec.expiresAt < new Date();
@@ -20,61 +21,68 @@ export default async function IndustryTokenPage({ params }: { params: { token: s
     : null;
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-12">
-      <div className="mb-6 text-center">
-        <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink-muted">
-          Centurion University · External Assessment
-        </p>
-        <h1 className="mt-1 font-display text-3xl text-ink">Industry supervisor review</h1>
-      </div>
+    <main className="min-h-screen bg-cream text-ink px-4 py-12">
+      <div className="mx-auto flex max-w-xl flex-col">
+        <div className="mb-6 text-center">
+          <div className="inline-flex items-center gap-2 font-bold">
+            <GooglyEyes size={22} />
+            ALR
+          </div>
+          <p className="mt-3 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
+            Centurion University · External Assessment
+          </p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">Industry supervisor review</h1>
+        </div>
 
-      {invalid || !deliverable ? (
-        <div className="card p-6 text-center">
-          <h2 className="font-display text-lg text-ink">This link is not valid</h2>
-          <p className="mt-1 text-sm text-ink-muted">
-            The assessment link may have expired or already been used. Please contact the department for a new one.
-          </p>
-        </div>
-      ) : rec?.usedAt ? (
-        <div className="card p-6 text-center">
-          <h2 className="font-display text-lg text-ink">Assessment received</h2>
-          <p className="mt-1 text-sm text-ink-muted">
-            Thank you — your evaluation was submitted on {fmtDate(rec.usedAt)}.
-          </p>
-        </div>
-      ) : (
-        <div className="card p-6">
-          <div className="mb-4">
-            <span className="font-mono text-[11px] uppercase tracking-wide text-ink-muted">
-              {DELIVERABLE_LABEL[deliverable.type] ?? deliverable.type} · {deliverable.academicYear}
-            </span>
-            <h2 className="mt-1 font-display text-xl text-ink">{deliverable.title}</h2>
-            <p className="mt-1 text-sm text-ink-muted">
-              Candidate{deliverable.candidates.length > 1 ? 's' : ''}:{' '}
-              {deliverable.candidates.map((c) => c.user.name).join(', ') || '—'}
+        {invalid || !deliverable ? (
+          <div className="card p-6 text-center">
+            <h2 className="text-lg font-bold text-ink">This link is not valid</h2>
+            <p className="mt-1 text-sm text-ink/55">
+              The assessment link may have expired or already been used. Please contact the department for a new one.
             </p>
           </div>
-
-          <form action={submitIndustryAssessment} className="space-y-4">
-            <input type="hidden" name="token" value={token} />
-            <div>
-              <label className="label">External score (out of 100)</label>
-              <input name="externalScore" type="number" min="0" max="100" required className="field font-mono" />
-              <p className="mt-1 text-[11px] text-ink-muted">
-                This contributes the external 50% of the internship/deliverable assessment.
+        ) : rec?.usedAt ? (
+          <div className="card p-6 text-center">
+            <h2 className="text-lg font-bold text-ink">Assessment received</h2>
+            <p className="mt-1 text-sm text-ink/55">
+              Thank you — your evaluation was submitted on {fmtDate(rec.usedAt)}.
+            </p>
+          </div>
+        ) : (
+          <div className="card overflow-hidden">
+            <div className="px-5 py-4 border-b border-ink/10">
+              <span className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
+                {DELIVERABLE_LABEL[deliverable.type] ?? deliverable.type} · {deliverable.academicYear}
+              </span>
+              <h2 className="mt-1 text-xl font-bold text-ink">{deliverable.title}</h2>
+              <p className="mt-1 text-sm text-ink/55">
+                Candidate{deliverable.candidates.length > 1 ? 's' : ''}:{' '}
+                {deliverable.candidates.map((c) => c.user.name).join(', ') || '—'}
               </p>
             </div>
-            <div>
-              <label className="label">Feedback</label>
-              <textarea name="feedback" className="field min-h-[110px] resize-y" placeholder="Your assessment of the candidate's work, conduct, and outcomes." />
-            </div>
-            <button className="btn-seal w-full">Submit assessment</button>
-          </form>
-          <p className="mt-3 text-center font-mono text-[10px] text-ink-muted">
-            Secure tokenized link · no account required · expires {fmtDate(rec?.expiresAt)}
-          </p>
-        </div>
-      )}
+            <form action={submitIndustryAssessment} className="p-5 space-y-4">
+              <input type="hidden" name="token" value={token} />
+              <div>
+                <label className="label">External score (out of 100)</label>
+                <input name="externalScore" type="number" min="0" max="100" required className="input" />
+                <p className="ui-field-hint">This contributes the external 50% of the internship/deliverable assessment.</p>
+              </div>
+              <div>
+                <label className="label">Feedback</label>
+                <textarea
+                  name="feedback"
+                  className="input"
+                  placeholder="Your assessment of the candidate's work, conduct, and outcomes."
+                />
+              </div>
+              <button className="btn-primary w-full">Submit assessment</button>
+            </form>
+            <p className="px-5 pb-4 text-center text-[10px] font-semibold uppercase tracking-wide text-ink/40">
+              Secure tokenized link · no account required · expires {fmtDate(rec?.expiresAt)}
+            </p>
+          </div>
+        )}
+      </div>
     </main>
   );
 }

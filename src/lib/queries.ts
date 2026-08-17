@@ -1,11 +1,7 @@
 import { db } from './db';
-import { RECORD_TYPES, requiredRecordTypes, type RecordType } from './domain';
-
-// ---------------------------------------------------------------------------
-// Student learning trace: for each enrolled course, which record types are
-// required (from the combination code), which the student has filed, and the
-// normalized subject-weight score achieved. This is the core "trace learning".
-// ---------------------------------------------------------------------------
+import { RECORD_TYPES, COMBINATIONS, requiredRecordTypes, type RecordType } from './domain';
+import { recordOrgWhere, studentOrgWhere } from './access';
+import type { CurrentUser } from './session';
 
 export interface CourseTraceRow {
   courseId: string;
@@ -21,16 +17,14 @@ export interface CourseTraceRow {
     status: string | null;
     normalizedScore: number | null;
   }[];
-  subjectTotal: number; // sum of achieved normalized scores
-  subjectMax: number; // sum of required weights
+  subjectTotal: number;
+  subjectMax: number;
 }
 
 export async function getStudentTrace(studentId: string): Promise<CourseTraceRow[]> {
   const enrollments = await db.enrollment.findMany({
     where: { studentId },
-    include: {
-      course: true,
-    },
+    include: { course: true },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -50,7 +44,6 @@ export async function getStudentTrace(studentId: string): Promise<CourseTraceRow
   for (const r of records) byCourseType.set(`${r.courseId}:${r.recordType}`, r);
 
   return enrollments.map((e) => {
-    const { COMBINATIONS } = require('./domain') as typeof import('./domain');
     const combo = COMBINATIONS[e.course.combinationCode as keyof typeof COMBINATIONS];
     const required = requiredRecordTypes(e.course.combinationCode as never).map((type) => {
       const spec = RECORD_TYPES[type];
@@ -104,12 +97,17 @@ export async function getStudentSummary(studentId: string) {
   };
 }
 
-// Records awaiting a given reviewer (faculty of the course, or mentor of student).
-export async function getReviewQueue(user: { id: string; role: string }) {
+export async function getReviewQueue(user: CurrentUser) {
+  const include = {
+    student: { select: { name: true, registrationNumber: true, mentorId: true, departmentId: true, campusId: true } },
+    course: true,
+    appeals: { where: { status: 'OPEN' }, select: { id: true } },
+  } as const;
+
   if (user.role === 'FACULTY') {
     return db.learningRecord.findMany({
       where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, course: { facultyId: user.id } },
-      include: { student: { select: { name: true, registrationNumber: true } }, course: true },
+      include,
       orderBy: { submittedAt: 'asc' },
       take: 100,
     });
@@ -117,28 +115,60 @@ export async function getReviewQueue(user: { id: string; role: string }) {
   if (user.role === 'MENTOR') {
     return db.learningRecord.findMany({
       where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, student: { mentorId: user.id } },
-      include: { student: { select: { name: true, registrationNumber: true } }, course: true },
+      include,
       orderBy: { submittedAt: 'asc' },
       take: 100,
     });
   }
-  // HoD/Dean see all submitted in their department/campus.
   return db.learningRecord.findMany({
-    where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] } },
-    include: { student: { select: { name: true, registrationNumber: true } }, course: true },
+    where: {
+      status: { in: ['SUBMITTED', 'UNDER_REVIEW'] },
+      ...recordOrgWhere(user),
+    },
+    include,
     orderBy: { submittedAt: 'asc' },
     take: 100,
   });
 }
 
-export async function getAnalyticsOverview() {
+export async function getAnalyticsOverview(user: CurrentUser) {
+  const recordWhere = recordOrgWhere(user);
+  const studentWhere = studentOrgWhere(user);
   const [students, faculty, records, byStatus, byType, byCampus] = await Promise.all([
-    db.user.count({ where: { role: 'STUDENT' } }),
-    db.user.count({ where: { role: 'FACULTY' } }),
-    db.learningRecord.count(),
-    db.learningRecord.groupBy({ by: ['status'], _count: true }),
-    db.learningRecord.groupBy({ by: ['recordType'], _count: true }),
-    db.course.groupBy({ by: ['campusId'], _count: true }),
+    db.user.count({ where: studentWhere }),
+    db.user.count({
+      where:
+        user.role === 'ADMIN'
+          ? { role: 'FACULTY' }
+          : user.role === 'HOD' && user.departmentId
+            ? { role: 'FACULTY', departmentId: user.departmentId }
+            : user.role === 'DEAN' && user.campusId
+              ? { role: 'FACULTY', campusId: user.campusId }
+              : { id: '__none__' },
+    }),
+    db.learningRecord.count({ where: recordWhere }),
+    db.learningRecord.groupBy({ by: ['status'], where: recordWhere, _count: true }),
+    db.learningRecord.groupBy({ by: ['recordType'], where: recordWhere, _count: true }),
+    db.course.groupBy({
+      by: ['campusId'],
+      where:
+        user.role === 'ADMIN'
+          ? {}
+          : user.role === 'HOD' && user.departmentId
+            ? { departmentId: user.departmentId }
+            : user.role === 'DEAN' && user.campusId
+              ? { campusId: user.campusId }
+              : { id: '__none__' },
+      _count: true,
+    }),
   ]);
   return { students, faculty, records, byStatus, byType, byCampus };
+}
+
+export async function getNotifications(userId: string) {
+  return db.notification.findMany({
+    where: { userId },
+    orderBy: { createdAt: 'desc' },
+    take: 20,
+  });
 }

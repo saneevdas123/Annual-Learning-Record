@@ -3,20 +3,20 @@ import { requireRole } from '@/lib/session';
 import { db } from '@/lib/db';
 import { createRecord } from '../actions';
 import { RECORD_TYPES, requiredRecordTypes, COMBINATIONS, type RecordType } from '@/lib/domain';
-import { PageHeader } from '@/components/ui';
+import { PageHead } from '@/components/ui';
 
 export const dynamic = 'force-dynamic';
 
 export default async function NewRecordPage({
   searchParams,
 }: {
-  searchParams: { courseId?: string; type?: string };
+  searchParams: Promise<{ courseId?: string; type?: string }>;
 }) {
   const user = await requireRole('STUDENT');
-  const courseId = searchParams.courseId;
-  const type = searchParams.type as RecordType | undefined;
+  const sp = await searchParams;
+  const courseId = sp.courseId;
+  const type = sp.type as RecordType | undefined;
 
-  // The set of courses the student can file against.
   const enrollments = await db.enrollment.findMany({
     where: { studentId: user.id },
     include: { course: true },
@@ -33,39 +33,48 @@ export default async function NewRecordPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Link href="/dashboard" className="text-sm text-ink-muted hover:text-ink">
+      <Link href="/dashboard" className="text-sm font-semibold text-ink/55 hover:text-ink">
         ← Back
       </Link>
-      <PageHeader
+      <PageHead
         eyebrow="New entry"
         title="File a learning record"
         subtitle="Each course requires the record type(s) mapped to its Framework configuration."
       />
 
-      <form action={createRecord} className="card space-y-5 p-6">
+      {!user.eDeclarationAt && (
+        <div className="ui-callout-warn p-4 text-sm">
+          Accept the academic integrity declaration on your{' '}
+          <Link href="/profile" className="font-semibold underline">
+            profile
+          </Link>{' '}
+          before creating a record.
+        </div>
+      )}
+
+      <form action={createRecord} className="card p-5 sm:p-6 space-y-5">
         <div>
           <label className="label">Course</label>
-          <select name="courseId" defaultValue={courseId ?? ''} required className="field">
+          <select name="courseId" defaultValue={courseId ?? ''} required className="input">
             <option value="" disabled>
               Select a course
             </option>
             {enrollments.map((e) => (
               <option key={e.course.id} value={e.course.id}>
-                {e.course.code} — {e.course.title} ({COMBINATIONS[e.course.combinationCode as keyof typeof COMBINATIONS]?.label})
+                {e.course.code} — {e.course.title} (
+                {COMBINATIONS[e.course.combinationCode as keyof typeof COMBINATIONS]?.label})
               </option>
             ))}
           </select>
           {!courseId && (
-            <p className="mt-1.5 text-xs text-ink-muted">
-              Tip: start from your dashboard to pre-select the exact record you need.
-            </p>
+            <p className="ui-field-hint">Tip: start from your dashboard to pre-select the exact record you need.</p>
           )}
         </div>
 
         <div>
           <label className="label">Record type</label>
           {selectedCourse ? (
-            <select name="recordType" defaultValue={type ?? ''} required className="field">
+            <select name="recordType" defaultValue={type ?? ''} required className="input">
               <option value="" disabled>
                 Select a record type
               </option>
@@ -76,7 +85,7 @@ export default async function NewRecordPage({
               ))}
             </select>
           ) : (
-            <select name="recordType" defaultValue={type ?? ''} required className="field">
+            <select name="recordType" defaultValue={type ?? ''} required className="input">
               {type && spec ? (
                 <option value={type}>
                   {spec.label} — weight {spec.weightPct}%
@@ -88,34 +97,30 @@ export default async function NewRecordPage({
               )}
             </select>
           )}
-          {spec && (
-            <p className="mt-1.5 rounded-lg border border-brass-100 bg-brass-50 px-3 py-2 text-xs text-brass-600">
-              Normalization: {spec.normalization}
-            </p>
-          )}
+          {spec && <p className="ui-callout-soft mt-2 px-3 py-2 text-xs">Normalization: {spec.normalization}</p>}
         </div>
 
         <div>
           <label className="label">Title</label>
-          <input name="title" required className="field" placeholder="e.g. Data Structures — Lab Record" />
+          <input name="title" required className="input" placeholder="e.g. Data Structures — Lab Record" />
         </div>
 
         <div>
           <label className="label">Description</label>
-          <textarea
-            name="description"
-            className="field min-h-[110px] resize-y"
-            placeholder="Summarize what this record covers."
-          />
+          <textarea name="description" className="input" placeholder="Summarize what this record covers." />
         </div>
 
         <div>
-          <label className="label">Books / manuals referred</label>
-          <input name="booksReferred" className="field" placeholder="Optional — matches the booklet outcome sheet" />
+          <label className="label">
+            Books / manuals referred <span className="ui-field-optional">optional</span>
+          </label>
+          <input name="booksReferred" className="input" placeholder="Matches the booklet outcome sheet" />
         </div>
 
         <div className="flex justify-end">
-          <button className="btn-primary">Create record</button>
+          <button className="btn-primary" disabled={!user.eDeclarationAt}>
+            Create record
+          </button>
         </div>
       </form>
     </div>
