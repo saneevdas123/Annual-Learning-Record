@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { db } from './db';
@@ -18,9 +19,8 @@ export interface CurrentUser {
   mustChangePassword: boolean;
 }
 
-// Reads the session cookie, verifies the JWT, and loads the user.
-// Returns null if not authenticated. Cached per-request by React.
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+/** One user lookup per request — layout and page share this. */
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const payload = await verifySessionToken(token);
@@ -47,7 +47,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (!user || !user.isActive) return null;
   const { isActive, ...rest } = user;
   return rest as CurrentUser;
-}
+});
 
 export async function requireUser(): Promise<CurrentUser> {
   const user = await getCurrentUser();

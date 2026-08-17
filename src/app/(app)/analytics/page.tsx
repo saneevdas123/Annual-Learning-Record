@@ -76,33 +76,29 @@ export default async function AnalyticsPage({
           { key: 'campus', label: 'By campus', href: '/analytics?tab=campus', count: byCampus.length },
           { key: 'integrity', label: 'Integrity', href: '/analytics?tab=integrity', count: plagiarismOpen },
         ]}
-      />
-
-      {tab === 'type' && (
+        panels={{
+          type: (
         <section className="card p-5">
           <h2 className="text-lg font-bold text-ink">Records by type</h2>
           <p className="mb-2 text-sm text-ink/55">Across all twelve subject configurations.</p>
           <CategoryBarChart data={byType} />
         </section>
-      )}
-
-      {tab === 'status' && (
+          ),
+          status: (
         <section className="card p-5">
           <h2 className="text-lg font-bold text-ink">Records by status</h2>
           <p className="mb-2 text-sm text-ink/55">Where records sit in the sign-off pipeline.</p>
           <CategoryBarChart data={byStatus} />
         </section>
-      )}
-
-      {tab === 'campus' && (
+          ),
+          campus: (
         <section className="card p-5">
           <h2 className="text-lg font-bold text-ink">Records by campus</h2>
           <p className="mb-2 text-sm text-ink/55">Filterable evidence base across the six campuses.</p>
           <CategoryBarChart data={byCampus} />
         </section>
-      )}
-
-      {tab === 'integrity' && (
+          ),
+          integrity: (
       <section className="card p-5">
         <h2 className="text-lg font-bold text-ink">Integrity &amp; accreditation</h2>
         <div className="mt-3 grid gap-4 sm:grid-cols-3">
@@ -124,7 +120,9 @@ export default async function AnalyticsPage({
           </div>
         </div>
       </section>
-      )}
+          ),
+        }}
+      />
     </div>
   );
 }

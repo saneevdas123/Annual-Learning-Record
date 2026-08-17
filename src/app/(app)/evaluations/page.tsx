@@ -123,16 +123,13 @@ export default async function EvaluationsPage({
               count: visible.filter((s) => progByStudent.has(s.id)).length,
             },
           ]}
-        />
-      ) : (
-        <h2 className="text-lg font-bold text-ink">Year-wise · {year}</h2>
-      )}
-
-      {visible.length === 0 ? (
-        <EmptyState title="No students in scope" message="No students match your department/campus or search." />
-      ) : tab === 'year' ? (
+          panels={{
+            year:
+              visible.length === 0 ? (
+                <EmptyState title="No students in scope" message="No students match your department/campus or search." />
+              ) : (
         <section className="space-y-3">
-          {canProgram ? <h2 className="text-lg font-bold text-ink">Year-wise · {year}</h2> : null}
+          <h2 className="text-lg font-bold text-ink">Year-wise · {year}</h2>
           {visible.map((s) => {
             const ev = evalByStudent.get(s.id);
             const approved = approvedByStudent.get(s.id) ?? 0;
@@ -198,7 +195,11 @@ export default async function EvaluationsPage({
             );
           })}
         </section>
-      ) : (
+              ),
+            program:
+              visible.length === 0 ? (
+                <EmptyState title="No students in scope" message="No students match your department/campus or search." />
+              ) : (
         <section className="space-y-3">
           <h2 className="text-lg font-bold text-ink">Program-wise · cumulated</h2>
           <div className="card overflow-hidden divide-y divide-ink/10">
@@ -227,6 +228,79 @@ export default async function EvaluationsPage({
               );
             })}
           </div>
+        </section>
+              ),
+          }}
+        />
+      ) : visible.length === 0 ? (
+        <EmptyState title="No students in scope" message="No students match your department/campus or search." />
+      ) : (
+        <section className="space-y-3">
+          <h2 className="text-lg font-bold text-ink">Year-wise · {year}</h2>
+          {visible.map((s) => {
+            const ev = evalByStudent.get(s.id);
+            const approved = approvedByStudent.get(s.id) ?? 0;
+            return (
+              <details key={s.id} className="card overflow-hidden">
+                <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-3.5 hover:bg-ink/[0.02]">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold text-ink">{s.name}</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
+                      {s.registrationNumber ?? '—'} · {approved} approved records
+                    </span>
+                  </span>
+                  {ev?.totalMark != null && <span className="text-sm font-bold text-ink">{ev.totalMark}/100</span>}
+                  <SealDisc status={ev?.status ?? 'PENDING'} />
+                </summary>
+
+                <div className="border-t border-ink/10 bg-cream/40 p-5">
+                  <ActionForm action={saveYearEvaluation} success="Rubric saved." className="space-y-4">
+                    <input type="hidden" name="studentId" value={s.id} />
+                    <input type="hidden" name="academicYear" value={year} />
+                    <div className="grid gap-3 sm:grid-cols-5">
+                      {RUBRIC.map((c) => (
+                        <div key={c.key}>
+                          <label className="label text-[11px]">{c.label}</label>
+                          <input
+                            name={c.key}
+                            type="number"
+                            min="0"
+                            max={c.max}
+                            defaultValue={(ev as Record<string, number> | undefined)?.[c.key] ?? 0}
+                            className="input"
+                          />
+                          <p className="mt-0.5 text-right text-[10px] font-bold text-ink/40">/{c.max}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button className="btn-ghost">Save rubric</button>
+                    </div>
+                  </ActionForm>
+
+                  <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-ink/10 pt-3">
+                    {ev && ev.status === 'IN_REVIEW' && (
+                      <ActionForm action={signoffYearEvaluation} success="Year signed off.">
+                        <input type="hidden" name="studentId" value={s.id} />
+                        <input type="hidden" name="academicYear" value={year} />
+                        <button className="btn-primary">Sign off &amp; post 1 credit</button>
+                      </ActionForm>
+                    )}
+                    {ev && ev.status === 'SIGNED_OFF' && user.role !== 'HOD' && (
+                      <ActionForm action={exportYearEvaluation} success="Exported to exam cell.">
+                        <input type="hidden" name="studentId" value={s.id} />
+                        <input type="hidden" name="academicYear" value={year} />
+                        <button className="btn-primary">Export to exam cell</button>
+                      </ActionForm>
+                    )}
+                    {ev?.examCellExportAt && (
+                      <span className="self-center text-[11px] font-bold text-ink/55">Exported ✓</span>
+                    )}
+                  </div>
+                </div>
+              </details>
+            );
+          })}
         </section>
       )}
     </div>

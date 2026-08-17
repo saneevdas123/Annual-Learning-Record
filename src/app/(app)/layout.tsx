@@ -1,7 +1,8 @@
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { requireUser } from '@/lib/session';
-import { db } from '@/lib/db';
 import Shell from '@/components/Shell';
+import { BellSkeleton, Notifications } from './Notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,14 +24,18 @@ const NAV: { href: string; label: string; roles?: string[] }[] = [
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const nav = NAV.filter((n) => !n.roles || n.roles.includes(user.role));
-  const notices = await db.notification.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: 'desc' },
-    take: 20,
-  });
 
   return (
-    <Shell role={user.role} name={user.name} nav={nav} notices={notices}>
+    <Shell
+      role={user.role}
+      name={user.name}
+      nav={nav}
+      noticesSlot={
+        <Suspense fallback={<BellSkeleton />}>
+          <Notifications userId={user.id} />
+        </Suspense>
+      }
+    >
       {children}
     </Shell>
   );

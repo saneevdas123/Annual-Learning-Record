@@ -10,7 +10,9 @@ function withOneConnection(url: string) {
     .replace(/\?&/, '?')
     .replace(/[?&]$/, '');
   const sep = withoutLimit.includes('?') ? '&' : '?';
-  return `${withoutLimit}${sep}connection_limit=1&pool_timeout=20`;
+  // One PrismaClient (singleton). A tiny pool lets layout + page query together
+  // so client navigations are not stuck behind a single serial connection.
+  return `${withoutLimit}${sep}connection_limit=3&pool_timeout=20`;
 }
 
 function createClient() {

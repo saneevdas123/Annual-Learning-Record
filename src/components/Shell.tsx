@@ -7,6 +7,7 @@ import { ROLE_LABELS } from '@/lib/domain';
 import { ConfirmDialog } from '@/components/ui';
 import { CutmLogo, CutmMark } from '@/components/CutmMark';
 import { NotificationBell, type Notice } from '@/components/NotificationBell';
+import { RouteProgress } from '@/components/RouteProgress';
 import { logoutAction } from '@/app/(auth)/actions';
 import { initials } from '@/lib/utils';
 
@@ -233,12 +234,14 @@ export default function Shell({
   name,
   nav,
   notices,
+  noticesSlot,
   children,
 }: {
   role: string;
   name: string;
   nav: NavItem[];
-  notices: Notice[];
+  notices?: Notice[];
+  noticesSlot?: ReactNode;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -272,6 +275,7 @@ export default function Shell({
 
   return (
     <div className="shell min-h-screen flex bg-cream">
+      <RouteProgress />
       <aside className="shell-aside hidden md:flex no-print">
         <div className="shell-brand">
           <CutmMark variant="sidebar" title="ALR" subtitle="Learning Record" priority />
@@ -353,7 +357,7 @@ export default function Shell({
             <span>Centurion University</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
-            <NotificationBell items={notices} />
+            {noticesSlot ?? <NotificationBell items={notices ?? []} />}
             <UserMenu role={role} name={name} onLogout={askLogout} />
           </div>
         </header>
