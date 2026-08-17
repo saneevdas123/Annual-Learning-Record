@@ -7,8 +7,16 @@ import { ALR_CREDITS_PER_YEAR } from '@/lib/domain';
 import { fmtDate } from '@/lib/utils';
 import { studentOrgWhere } from '@/lib/access';
 import type { CurrentUser } from '@/lib/session';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Overview',
+  description: 'Your CUTM Annual Learning Record dashboard — courses, submissions, reviews, and credits.',
+  path: '/dashboard',
+});
 
 export default async function DashboardPage() {
   const user = await requireUser();

@@ -5,8 +5,16 @@ import { AppTabs } from '@/components/AppTabs';
 import { fmtDate } from '@/lib/utils';
 import { ALR_CREDITS_PER_YEAR } from '@/lib/domain';
 import { studentOrgWhere } from '@/lib/access';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Credit ledger',
+  description: 'Compulsory-basket ALR credits posted from signed-off annual records.',
+  path: '/credits',
+});
 
 export default async function CreditsPage({
   searchParams,
@@ -75,28 +83,11 @@ export default async function CreditsPage({
                   count: entries.filter((e) => e.examCellRef).length,
                 },
               ]}
+              panels={{
+                all: <StudentCreditList entries={entries} />,
+                exported: <StudentCreditList entries={entries.filter((e) => e.examCellRef)} />,
+              }}
             />
-            <div className="card overflow-hidden divide-y divide-ink/10">
-              {(tab === 'exported' ? entries.filter((e) => e.examCellRef) : entries).map((e) => (
-                <div key={e.id} className="flex items-center gap-4 px-5 py-4">
-                  <span className="text-sm font-bold text-ink">{e.academicYear}</span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-2">
-                      <Badge tone="amber">{e.basket}</Badge>
-                      <span className="text-[11px] text-ink/45">{e.source}</span>
-                    </span>
-                    {e.examCellRef && (
-                      <span className="mt-0.5 block text-[10px] font-semibold text-ink/55">{e.examCellRef}</span>
-                    )}
-                  </span>
-                  <span className="text-lg font-bold text-ink">
-                    {e.credits}
-                    <span className="text-xs text-ink/45"> cr</span>
-                  </span>
-                  <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
-                </div>
-              ))}
-            </div>
           </div>
         )}
       </div>
@@ -142,24 +133,80 @@ export default async function CreditsPage({
                 count: entries.filter((e) => e.examCellRef).length,
               },
             ]}
+            panels={{
+              all: <StaffCreditList entries={entries} />,
+              exported: <StaffCreditList entries={entries.filter((e) => e.examCellRef)} />,
+            }}
           />
-          <div className="card overflow-hidden divide-y divide-ink/10">
-            {(tab === 'exported' ? entries.filter((e) => e.examCellRef) : entries).map((e) => (
-              <div key={e.id} className="flex items-center gap-4 px-5 py-3.5">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold text-ink">{e.student.name}</span>
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
-                    {e.student.registrationNumber ?? '—'} · {e.academicYear}
-                  </span>
-                </span>
-                {e.examCellRef && <Badge tone="amber">exported</Badge>}
-                <span className="text-sm font-bold text-ink">{e.credits} cr</span>
-                <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
-              </div>
-            ))}
-          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function StudentCreditList({
+  entries,
+}: {
+  entries: { id: string; academicYear: string; basket: string; source: string; examCellRef: string | null; credits: number; postedAt: Date }[];
+}) {
+  if (entries.length === 0) {
+    return <EmptyState title="Nothing in this tab" message="Credits appear here after exam-cell export." />;
+  }
+  return (
+    <div className="card overflow-hidden divide-y divide-ink/10">
+      {entries.map((e) => (
+        <div key={e.id} className="flex items-center gap-4 px-5 py-4">
+          <span className="text-sm font-bold text-ink">{e.academicYear}</span>
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-2">
+              <Badge tone="amber">{e.basket}</Badge>
+              <span className="text-[11px] text-ink/45">{e.source}</span>
+            </span>
+            {e.examCellRef && (
+              <span className="mt-0.5 block text-[10px] font-semibold text-ink/55">{e.examCellRef}</span>
+            )}
+          </span>
+          <span className="text-lg font-bold text-ink">
+            {e.credits}
+            <span className="text-xs text-ink/45"> cr</span>
+          </span>
+          <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StaffCreditList({
+  entries,
+}: {
+  entries: {
+    id: string;
+    academicYear: string;
+    examCellRef: string | null;
+    credits: number;
+    postedAt: Date;
+    student: { name: string; registrationNumber: string | null };
+  }[];
+}) {
+  if (entries.length === 0) {
+    return <EmptyState title="Nothing in this tab" message="Exported postings will show here." />;
+  }
+  return (
+    <div className="card overflow-hidden divide-y divide-ink/10">
+      {entries.map((e) => (
+        <div key={e.id} className="flex items-center gap-4 px-5 py-3.5">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-ink">{e.student.name}</span>
+            <span className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
+              {e.student.registrationNumber ?? '—'} · {e.academicYear}
+            </span>
+          </span>
+          {e.examCellRef && <Badge tone="amber">exported</Badge>}
+          <span className="text-sm font-bold text-ink">{e.credits} cr</span>
+          <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
+        </div>
+      ))}
     </div>
   );
 }

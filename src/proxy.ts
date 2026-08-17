@@ -3,10 +3,30 @@ import { SESSION_COOKIE, verifySessionToken } from './lib/auth';
 
 const PUBLIC = ['/login', '/register', '/industry'];
 
+function isMetadataPath(pathname: string) {
+  return (
+    pathname.startsWith('/opengraph-image') ||
+    pathname.startsWith('/twitter-image') ||
+    pathname.startsWith('/icon') ||
+    pathname.startsWith('/apple-icon') ||
+    pathname.startsWith('/favicon') ||
+    pathname.includes('/opengraph-image') ||
+    pathname.includes('/twitter-image') ||
+    pathname === '/robots.txt' ||
+    pathname === '/sitemap.xml' ||
+    pathname === '/manifest.webmanifest' ||
+    pathname === '/og.png' ||
+    pathname === '/favicon.png'
+  );
+}
+
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  const isPublic = PUBLIC.some((p) => pathname.startsWith(p)) || pathname === '/';
+  const isPublic =
+    PUBLIC.some((p) => pathname === p || pathname.startsWith(`${p}/`)) ||
+    pathname === '/' ||
+    isMetadataPath(pathname);
 
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const session = token ? await verifySessionToken(token) : null;

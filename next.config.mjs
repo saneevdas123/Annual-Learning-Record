@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  // Standalone is for Docker. On Vercel, Next 16.3 + standalone skips
+  // next-server.js.nft.json and onBuildComplete then fails with ENOENT.
+  output: process.env.VERCEL ? undefined : 'standalone',
   reactStrictMode: true,
   poweredByHeader: false,
   serverExternalPackages: [

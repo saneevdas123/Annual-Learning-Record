@@ -6,8 +6,26 @@ import { COMBINATIONS, requiredRecordTypes, RECORD_TYPES, type RecordType } from
 import { PageHead, Badge, SealDisc } from '@/components/ui';
 import { AppTabs } from '@/components/AppTabs';
 import { assertCanViewCourse } from '@/lib/access';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const course = await db.course.findUnique({
+    where: { id },
+    select: { code: true, title: true, academicYear: true },
+  });
+  if (!course) {
+    return pageMeta({ title: 'Course', description: 'Course learning records.', path: `/courses/${id}` });
+  }
+  return pageMeta({
+    title: `${course.code} · ${course.title}`,
+    description: `${course.title} (${course.academicYear}) — required learning records on the CUTM ALR.`,
+    path: `/courses/${id}`,
+  });
+}
 
 export default async function CourseDetailPage({
   params,
@@ -67,19 +85,17 @@ export default async function CourseDetailPage({
         action={<Badge tone="blue">{combo?.label ?? course.combinationCode}</Badge>}
       />
 
-      {!isStudent ? (
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          {!isStudent ? (
         <AppTabs
           active={tab}
           tabs={[
             { key: 'records', label: 'Required records', href: `/courses/${course.id}`, count: reqs.length },
             { key: 'students', label: 'Students', href: `/courses/${course.id}?tab=students`, count: roster.length },
           ]}
-        />
-      ) : null}
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          {tab === 'records' && (
+          panels={{
+            records: (
           <section className="card p-5">
             <h2 className="text-lg font-bold text-ink">Required learning records</h2>
             <p className="mt-1 text-sm text-ink/55">
@@ -123,9 +139,8 @@ export default async function CourseDetailPage({
               })}
             </div>
           </section>
-          )}
-
-          {tab === 'students' && (
+            ),
+            students: (
             <section className="card p-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-ink">Enrolled students</h2>
@@ -152,6 +167,52 @@ export default async function CourseDetailPage({
                 </ul>
               )}
             </section>
+            ),
+          }}
+        />
+          ) : (
+          <section className="card p-5">
+            <h2 className="text-lg font-bold text-ink">Required learning records</h2>
+            <p className="mt-1 text-sm text-ink/55">
+              This subject is configured as <strong>{combo?.label}</strong>, which requires {reqs.length} record{' '}
+              {reqs.length === 1 ? 'type' : 'types'} totalling{' '}
+              {reqs.reduce((s, t) => s + RECORD_TYPES[t].weightPct, 0)}% of the subject weight.
+            </p>
+            <div className="mt-4 space-y-3">
+              {reqs.map((t) => {
+                const s = RECORD_TYPES[t as RecordType];
+                const mine = byType.get(t);
+                return (
+                  <div key={t} className="ui-nest p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-sm font-bold text-ink">{s.label}</h3>
+                        <p className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
+                          weight {s.weightPct}% · scored /{s.perEntryMax} per entry
+                        </p>
+                      </div>
+                      {mine ? (
+                          <div className="flex items-center gap-2">
+                            <SealDisc status={mine.status} />
+                            <Link href={`/records/${mine.id}`} className="btn-ghost !px-3 !py-1.5 text-xs">
+                              Open
+                            </Link>
+                          </div>
+                        ) : (
+                          <Link
+                            href={`/records/new?courseId=${course.id}&type=${t}`}
+                            className="btn-primary !px-3 !py-1.5 text-xs"
+                          >
+                            File record
+                          </Link>
+                        )}
+                    </div>
+                    <p className="mt-2 text-xs text-ink/60">{s.normalization}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
           )}
         </div>
 

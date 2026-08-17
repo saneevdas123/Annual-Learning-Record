@@ -17,8 +17,26 @@ import {
 } from '../actions';
 import { ActionForm } from '@/components/ActionForm';
 import { AppTabs } from '@/components/AppTabs';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const record = await db.learningRecord.findUnique({
+    where: { id },
+    select: { title: true, description: true, course: { select: { code: true } } },
+  });
+  if (!record) {
+    return pageMeta({ title: 'Learning record', description: 'A student learning record.', path: `/records/${id}` });
+  }
+  return pageMeta({
+    title: record.title,
+    description: record.description?.slice(0, 160) || `${record.course.code} learning record on the CUTM ALR.`,
+    path: `/records/${id}`,
+  });
+}
 
 export default async function RecordDetailPage({
   params,
@@ -91,7 +109,9 @@ export default async function RecordDetailPage({
         action={<SealDisc status={record.status} />}
       />
 
-      {(showReview || showAppeals) && (
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          {showReview || showAppeals ? (
         <AppTabs
           active={tab}
           tabs={[
@@ -110,12 +130,8 @@ export default async function RecordDetailPage({
                 ]
               : []),
           ]}
-        />
-      )}
-
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
-          {tab === 'record' && (
+          panels={{
+            record: (
           <div className="space-y-6">
           <section className="card p-5">
             <h2 className="text-lg font-bold text-ink">Overview</h2>
@@ -234,9 +250,8 @@ export default async function RecordDetailPage({
             )}
           </section>
           </div>
-          )}
-
-          {tab === 'review' && (
+            ),
+            review: (
             <section className="card p-5">
               <h2 className="text-lg font-bold text-ink">Evaluation</h2>
 
@@ -338,9 +353,8 @@ export default async function RecordDetailPage({
                 </div>
               )}
             </section>
-          )}
-
-          {tab === 'appeals' && (
+            ),
+            appeals: (
           <div className="space-y-6">
           {openAppeals.length > 0 && assigned && (
             <section className="card p-5">
@@ -406,6 +420,128 @@ export default async function RecordDetailPage({
               )}
             </section>
           )}
+          </div>
+            ),
+          }}
+        />
+          ) : (
+          <div className="space-y-6">
+          <section className="card p-5">
+            <h2 className="text-lg font-bold text-ink">Overview</h2>
+            {record.description ? (
+              <p className="mt-2 whitespace-pre-wrap text-sm text-ink/70">{record.description}</p>
+            ) : (
+              <p className="mt-2 text-sm text-ink/45">No description provided.</p>
+            )}
+            {record.booksReferred && (
+              <p className="ui-nest mt-3 px-3 py-2 text-xs text-ink/70">
+                <span className="block text-[10px] font-bold uppercase tracking-wide text-ink/40">Books / manuals</span>
+                {record.booksReferred}
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Badge tone="muted">Scale /{spec.perEntryMax} per entry</Badge>
+              <Badge tone="amber">Subject weight {spec.weightPct}%</Badge>
+              {record.student.registrationNumber && (
+                <Badge tone="blue">{record.student.registrationNumber}</Badge>
+              )}
+            </div>
+            <p className="ui-callout-soft mt-3 px-3 py-2 text-xs">Normalization: {spec.normalization}</p>
+          </section>
+
+          <section className="card p-5">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-ink">
+                {spec.entryBased ? 'Experiments / tasks' : 'Assessment components'}
+              </h2>
+              <span className="text-xs font-semibold text-ink/45">
+                {record.entries.length} · avg {entryAvg.toFixed(1)}/{spec.perEntryMax}
+              </span>
+            </div>
+
+            {record.entries.length === 0 ? (
+              <p className="mt-3 text-sm text-ink/45">
+                No entries recorded yet{canEdit ? ' — add the first below.' : '.'}
+              </p>
+            ) : (
+              <ul className="mt-3 space-y-3">
+                {record.entries.map((e, i) => {
+                  const rubric = (e.rubricScores as Record<string, number> | null) ?? {};
+                  return (
+                    <li key={e.id} className="ui-nest p-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-ink">
+                          {String(i + 1).padStart(2, '0')} · {e.title}
+                        </span>
+                        <span className="text-sm font-bold text-ink">
+                          {e.rawScore ?? 0}
+                          <span className="text-ink/45">/{e.maxScore}</span>
+                        </span>
+                      </div>
+                      {e.content && <p className="mt-1 text-xs text-ink/60">{e.content}</p>}
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {Object.entries(rubric).map(([k, v]) => (
+                          <span key={k} className="badge">
+                            {k}: {v}
+                          </span>
+                        ))}
+                        {e.hoursLogged != null && <Badge tone="amber">{e.hoursLogged}h</Badge>}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {canEdit && (
+              <ActionForm action={addEntry} success="Entry saved." className="mt-4 space-y-3 border-t border-ink/10 pt-4">
+                <input type="hidden" name="recordId" value={record.id} />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="label">Entry title</label>
+                    <input
+                      name="entryTitle"
+                      required
+                      className="input"
+                      placeholder={spec.entryBased ? 'e.g. Experiment 3' : 'e.g. Assessment'}
+                    />
+                  </div>
+                  {spec.hoursBased && (
+                    <div>
+                      <label className="label">Hours logged</label>
+                      <input name="hours" type="number" min="0" step="0.5" className="input" placeholder="0" />
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="label">Notes</label>
+                  <textarea name="entryContent" className="input" placeholder="What was done, observed, concluded." />
+                </div>
+                <div>
+                  <p className="label">Rubric ({spec.perEntryMax} total)</p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {spec.rubric.map((c) => (
+                      <label key={c.criterion} className="ui-nest flex items-center justify-between gap-2 px-3 py-1.5">
+                        <span className="text-xs text-ink/70">{c.criterion}</span>
+                        <input
+                          name={`rubric_${c.criterion}`}
+                          type="number"
+                          min="0"
+                          max={c.max}
+                          defaultValue={0}
+                          className="input !w-16 !px-2 !py-1 text-right"
+                        />
+                        <span className="text-[10px] font-bold text-ink/40">/{c.max}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button className="btn-primary">Add entry</button>
+                </div>
+              </ActionForm>
+            )}
+          </section>
           </div>
           )}
         </div>

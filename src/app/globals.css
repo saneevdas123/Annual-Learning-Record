@@ -529,6 +529,23 @@ html.js-landing .reveal.is-in {
   transform: translate(1px, 1px);
   box-shadow: 1px 1px 0 0 #000;
 }
+.route-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 80;
+  height: 3px;
+  width: 38%;
+  background: #ff4b3e;
+  box-shadow: 0 0 0 1px #141414;
+  animation: route-progress 0.85s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes route-progress {
+  0% { width: 8%; opacity: 1; }
+  50% { width: 72%; }
+  100% { width: 94%; opacity: 0.85; }
+}
 .shell-topbar {
   display: flex;
   align-items: center;

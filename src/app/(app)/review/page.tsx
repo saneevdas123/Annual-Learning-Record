@@ -5,8 +5,16 @@ import { RECORD_TYPES, ROLE_LABELS, RECORD_STATUS_LABELS, type RecordType } from
 import { PageHead, EmptyState, SealDisc, Badge, Stat } from '@/components/ui';
 import { AppTabs } from '@/components/AppTabs';
 import { fmtDate } from '@/lib/utils';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Review queue',
+  description: 'Records waiting for faculty, mentor, HoD, or dean sign-off.',
+  path: '/review',
+});
 
 const TABS = [
   { key: 'all', label: 'All' },
@@ -25,12 +33,63 @@ export default async function ReviewPage({
   const tab = TABS.some((t) => t.key === rawTab) ? rawTab! : 'all';
   const queue = await getReviewQueue(user);
 
-  const shown =
-    tab === 'all'
-      ? queue
-      : tab === 'appeals'
-        ? queue.filter((r) => r.appeals.length > 0)
-        : queue.filter((r) => r.status === tab);
+  function list(shown: typeof queue) {
+    if (shown.length === 0) {
+      return <EmptyState title="Nothing in this tab" message="Try another filter — the rest of the queue is on All." />;
+    }
+    return (
+      <>
+        <div className="hidden md:block table-wrap">
+          <table className="w-full">
+            <thead>
+              <tr>
+                <th className="th">Record</th>
+                <th className="th">Student</th>
+                <th className="th">Submitted</th>
+                <th className="th">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((r) => (
+                <tr key={r.id}>
+                  <td className="td">
+                    <Link href={`/records/${r.id}`} className="font-semibold hover:text-brand">
+                      {r.title}
+                    </Link>
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      <Badge tone="muted">{RECORD_TYPES[r.recordType as RecordType].label}</Badge>
+                      {r.appeals.length > 0 && <Badge tone="red">Appeal</Badge>}
+                    </div>
+                  </td>
+                  <td className="td text-ink/60">
+                    {r.student.name}
+                    {r.student.registrationNumber ? ` · ${r.student.registrationNumber}` : ''} · {r.course.code}
+                  </td>
+                  <td className="td text-ink/55">{fmtDate(r.submittedAt)}</td>
+                  <td className="td">
+                    <SealDisc status={r.status} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="md:hidden space-y-2">
+          {shown.map((r) => (
+            <Link key={r.id} href={`/records/${r.id}`} className="ui-nest block p-4">
+              <div className="flex items-start justify-between gap-2">
+                <span className="font-semibold text-ink">{r.title}</span>
+                <SealDisc status={r.status} />
+              </div>
+              <p className="mt-1 text-xs text-ink/50">
+                {r.student.name} · {r.course.code}
+              </p>
+            </Link>
+          ))}
+        </div>
+      </>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -63,62 +122,19 @@ export default async function ReviewPage({
                     ? queue.filter((r) => r.appeals.length > 0).length
                     : queue.filter((r) => r.status === t.key).length,
             }))}
+            panels={Object.fromEntries(
+              TABS.map((t) => [
+                t.key,
+                list(
+                  t.key === 'all'
+                    ? queue
+                    : t.key === 'appeals'
+                      ? queue.filter((r) => r.appeals.length > 0)
+                      : queue.filter((r) => r.status === t.key)
+                ),
+              ])
+            )}
           />
-
-          {shown.length === 0 ? (
-            <EmptyState title="Nothing in this tab" message="Try another filter — the rest of the queue is on All." />
-          ) : (
-            <>
-              <div className="hidden md:block table-wrap">
-                <table className="w-full">
-                  <thead>
-                    <tr>
-                      <th className="th">Record</th>
-                      <th className="th">Student</th>
-                      <th className="th">Submitted</th>
-                      <th className="th">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.map((r) => (
-                      <tr key={r.id}>
-                        <td className="td">
-                          <Link href={`/records/${r.id}`} className="font-semibold hover:text-brand">
-                            {r.title}
-                          </Link>
-                          <div className="mt-0.5 flex flex-wrap gap-1">
-                            <Badge tone="muted">{RECORD_TYPES[r.recordType as RecordType].label}</Badge>
-                            {r.appeals.length > 0 && <Badge tone="red">Appeal</Badge>}
-                          </div>
-                        </td>
-                        <td className="td text-ink/60">
-                          {r.student.name}
-                          {r.student.registrationNumber ? ` · ${r.student.registrationNumber}` : ''} · {r.course.code}
-                        </td>
-                        <td className="td text-ink/55">{fmtDate(r.submittedAt)}</td>
-                        <td className="td">
-                          <SealDisc status={r.status} />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <div className="md:hidden space-y-2">
-                {shown.map((r) => (
-                  <Link key={r.id} href={`/records/${r.id}`} className="ui-nest block p-4">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-semibold text-ink">{r.title}</span>
-                      <SealDisc status={r.status} />
-                    </div>
-                    <p className="mt-1 text-xs text-ink/50">
-                      {r.student.name} · {r.course.code}
-                    </p>
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
         </>
       )}
     </div>

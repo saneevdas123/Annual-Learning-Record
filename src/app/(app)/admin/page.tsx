@@ -13,8 +13,16 @@ import { PersonEditor } from './PersonEditor';
 import { EnrollCreateForm } from './EnrollCreateForm';
 import { OrgWorkspace } from './OrgWorkspace';
 import { AppTabs } from '@/components/AppTabs';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Administration',
+  description: 'Set up campuses, departments, programs, people, courses, and enrollment.',
+  path: '/admin',
+});
 
 const TABS = [
   { key: 'organization', label: 'Organization' },
@@ -73,60 +81,43 @@ export default async function AdminPage({
     db.enrollment.count(),
   ]);
 
-  const users =
-    tab === 'people'
-      ? await db.user.findMany({
-          where: userWhere,
-          include: { campus: { select: { name: true } }, department: { select: { name: true } } },
-          orderBy: { createdAt: 'desc' },
-          take: 120,
-        })
-      : [];
-
-  const mentors =
-    tab === 'people'
-      ? await db.user.findMany({
-          where: { role: 'MENTOR', isActive: true },
-          select: { id: true, name: true },
-          orderBy: { name: 'asc' },
-        })
-      : [];
-
-  const courses =
-    tab === 'courses' || tab === 'enroll'
-      ? await db.course.findMany({
-          where: tab === 'courses' ? courseWhere : {},
-          include: {
-            faculty: { select: { name: true } },
-            campus: { select: { name: true } },
-            department: { select: { name: true } },
-            _count: { select: { enrollments: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: tab === 'enroll' ? 200 : 120,
-        })
-      : [];
-
-  const students =
-    tab === 'enroll'
-      ? await db.user.findMany({
-          where: { role: 'STUDENT', isActive: true },
-          select: { id: true, name: true, registrationNumber: true },
-          orderBy: { name: 'asc' },
-        })
-      : [];
-
-  const enrollments =
-    tab === 'enroll'
-      ? await db.enrollment.findMany({
-          include: {
-            student: { select: { name: true, registrationNumber: true } },
-            course: { select: { code: true, title: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-          take: 80,
-        })
-      : [];
+  const [users, mentors, courses, students, enrollments] = await Promise.all([
+    db.user.findMany({
+      where: userWhere,
+      include: { campus: { select: { name: true } }, department: { select: { name: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 120,
+    }),
+    db.user.findMany({
+      where: { role: 'MENTOR', isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
+    db.course.findMany({
+      where: courseWhere,
+      include: {
+        faculty: { select: { name: true } },
+        campus: { select: { name: true } },
+        department: { select: { name: true } },
+        _count: { select: { enrollments: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    }),
+    db.user.findMany({
+      where: { role: 'STUDENT', isActive: true },
+      select: { id: true, name: true, registrationNumber: true },
+      orderBy: { name: 'asc' },
+    }),
+    db.enrollment.findMany({
+      include: {
+        student: { select: { name: true, registrationNumber: true } },
+        course: { select: { code: true, title: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 80,
+    }),
+  ]);
 
   const counts = {
     organization: campuses.length + departments.length + programs.length,
@@ -159,9 +150,8 @@ export default async function AdminPage({
           href: `/admin?tab=${t.key}`,
           count: counts[t.key],
         }))}
-      />
-
-      {tab === 'organization' && (
+        panels={{
+          organization: (
         <div className="space-y-6">
           <section className="card p-5">
             <h2 className="font-bold text-ink">Setup checklist</h2>
@@ -188,9 +178,8 @@ export default async function AdminPage({
 
           <OrgWorkspace campuses={campuses} departments={departments} programs={programs} />
         </div>
-      )}
-
-      {tab === 'courses' && (
+          ),
+          courses: (
         <div className="space-y-4">
           <AdminSearch tab="courses" q={q} placeholder="Search code or title" />
           <div className="card overflow-hidden">
@@ -231,9 +220,8 @@ export default async function AdminPage({
                 )}
               </div>
         </div>
-      )}
-
-      {tab === 'people' && (
+          ),
+          people: (
         <div className="space-y-4">
           <AdminSearch tab="people" q={q} role={roleFilter} placeholder="Search name, email, or registration no." />
           <div className="card overflow-hidden">
@@ -272,9 +260,8 @@ export default async function AdminPage({
                 )}
               </div>
         </div>
-      )}
-
-      {tab === 'enroll' && (
+          ),
+          enroll: (
         <div className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <Stat tone="gray" label="Active students" value={students.length} />
@@ -312,7 +299,9 @@ export default async function AdminPage({
                 )}
               </div>
         </div>
-      )}
+          ),
+        }}
+      />
     </div>
   );
 }

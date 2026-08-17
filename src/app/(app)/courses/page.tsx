@@ -4,8 +4,16 @@ import { db } from '@/lib/db';
 import { COMBINATIONS, requiredRecordTypes, RECORD_TYPES } from '@/lib/domain';
 import { PageHead, EmptyState, Badge } from '@/components/ui';
 import { courseOrgWhere } from '@/lib/access';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Courses',
+  description: 'Courses and required learning records in your CUTM ALR scope.',
+  path: '/courses',
+});
 
 export default async function CoursesPage() {
   const user = await requireUser();

@@ -8,8 +8,16 @@ import { changePasswordFromProfile } from '@/app/(app)/account/actions';
 import { ActionForm } from '@/components/ActionForm';
 import { PasswordField } from '@/components/PasswordField';
 import { AppTabs } from '@/components/AppTabs';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Your profile',
+  description: 'Identity, academic integrity declaration, placement, and password.',
+  path: '/profile',
+});
 
 export default async function ProfilePage({
   searchParams,
@@ -40,9 +48,8 @@ export default async function ProfilePage({
           { key: 'profile', label: 'Profile', href: '/profile' },
           { key: 'security', label: 'Security', href: '/profile?tab=security' },
         ]}
-      />
-
-      {tab === 'profile' && (
+        panels={{
+          profile: (
       <div className="space-y-6">
       <section className="card flex items-center gap-4 p-5">
         <span className="shell-avatar !h-16 !w-16 text-lg">{initials(user.name)}</span>
@@ -100,9 +107,8 @@ export default async function ProfilePage({
         </ActionForm>
       </section>
       </div>
-      )}
-
-      {tab === 'security' && (
+          ),
+          security: (
       <section className="card p-5">
         <h3 className="font-bold text-ink">Change password</h3>
         <p className="mt-1 text-sm text-ink/55">At least 8 characters. You will stay signed in.</p>
@@ -133,7 +139,9 @@ export default async function ProfilePage({
           </div>
         </ActionForm>
       </section>
-      )}
+          ),
+        }}
+      />
     </div>
   );
 }
