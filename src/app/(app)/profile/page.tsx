@@ -8,8 +8,16 @@ import { changePasswordFromProfile } from '@/app/(app)/account/actions';
 import { ActionForm } from '@/components/ActionForm';
 import { PasswordField } from '@/components/PasswordField';
 import { AppTabs } from '@/components/AppTabs';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Your profile',
+  description: 'Identity, academic integrity declaration, placement, and password.',
+  path: '/profile',
+});
 
 export default async function ProfilePage({
   searchParams,

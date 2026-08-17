@@ -1,8 +1,13 @@
+import type { Metadata } from 'next';
 import { requireUser } from '@/lib/session';
 import { db } from '@/lib/db';
 import Shell from '@/components/Shell';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 const NAV: { href: string; label: string; roles?: string[] }[] = [
   { href: '/dashboard', label: 'Overview' },

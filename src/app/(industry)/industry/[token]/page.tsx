@@ -4,8 +4,16 @@ import { submitIndustryAssessment } from '../../actions';
 import { fmtDate } from '@/lib/utils';
 import { CutmMark } from '@/components/CutmMark';
 import { ActionForm } from '@/components/ActionForm';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Industry supervisor review',
+  description: 'Tokenised external assessment of a student internship or industry deliverable.',
+  path: '/industry',
+});
 
 export default async function IndustryTokenPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;

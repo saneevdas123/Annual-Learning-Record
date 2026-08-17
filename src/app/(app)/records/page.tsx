@@ -5,8 +5,16 @@ import { SealDisc, EmptyState, PageHead, Badge } from '@/components/ui';
 import { AppTabs } from '@/components/AppTabs';
 import { RECORD_TYPES, RECORD_STATUS_LABELS } from '@/lib/domain';
 import { fmtDate } from '@/lib/utils';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'My learning records',
+  description: 'All learning records you have filed across enrolled courses.',
+  path: '/records',
+});
 
 const TABS = [
   { key: 'all', label: 'All' },

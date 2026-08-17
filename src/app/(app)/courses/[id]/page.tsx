@@ -6,8 +6,26 @@ import { COMBINATIONS, requiredRecordTypes, RECORD_TYPES, type RecordType } from
 import { PageHead, Badge, SealDisc } from '@/components/ui';
 import { AppTabs } from '@/components/AppTabs';
 import { assertCanViewCourse } from '@/lib/access';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const course = await db.course.findUnique({
+    where: { id },
+    select: { code: true, title: true, academicYear: true },
+  });
+  if (!course) {
+    return pageMeta({ title: 'Course', description: 'Course learning records.', path: `/courses/${id}` });
+  }
+  return pageMeta({
+    title: `${course.code} · ${course.title}`,
+    description: `${course.title} (${course.academicYear}) — required learning records on the CUTM ALR.`,
+    path: `/courses/${id}`,
+  });
+}
 
 export default async function CourseDetailPage({
   params,

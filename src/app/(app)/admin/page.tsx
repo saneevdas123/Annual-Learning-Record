@@ -13,8 +13,16 @@ import { PersonEditor } from './PersonEditor';
 import { EnrollCreateForm } from './EnrollCreateForm';
 import { OrgWorkspace } from './OrgWorkspace';
 import { AppTabs } from '@/components/AppTabs';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Administration',
+  description: 'Set up campuses, departments, programs, people, courses, and enrollment.',
+  path: '/admin',
+});
 
 const TABS = [
   { key: 'organization', label: 'Organization' },

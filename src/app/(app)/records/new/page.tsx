@@ -4,8 +4,16 @@ import { db } from '@/lib/db';
 import { type RecordType } from '@/lib/domain';
 import { EmptyState, PageHead } from '@/components/ui';
 import { NewRecordForm } from '../NewRecordForm';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'File a learning record',
+  description: 'Start a new Annual Learning Record for a course you are enrolled in.',
+  path: '/records/new',
+});
 
 export default async function NewRecordPage({
   searchParams,

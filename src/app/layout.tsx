@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Outfit } from 'next/font/google';
 import './globals.css';
 import AppToaster from '@/components/AppToaster';
+import { getSiteUrl, SITE } from '@/lib/site';
 
 const outfit = Outfit({
   subsets: ['latin'],
@@ -10,20 +11,40 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(getSiteUrl()),
   title: {
-    default: 'ALR — Annual Learning Record | Centurion University',
-    template: '%s · ALR',
+    default: `${SITE.shortName} — Annual Learning Record | ${SITE.orgShort}`,
+    template: `%s · ${SITE.shortName}`,
   },
-  description:
-    'The Annual Learning Record platform for Centurion University of Technology and Management — recording, evaluating, and crediting student learning across the program.',
-  applicationName: 'ALR',
-  icons: {
-    icon: '/cutm-logo.png',
-    apple: '/cutm-logo.png',
+  description: SITE.description,
+  applicationName: SITE.appName,
+  authors: [{ name: SITE.org, url: 'https://cutm.ac.in' }],
+  creator: SITE.org,
+  publisher: SITE.org,
+  keywords: SITE.keywords,
+  category: 'education',
+  referrer: 'origin-when-cross-origin',
+  robots: { index: true, follow: true },
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    locale: SITE.locale,
+    url: '/',
+    siteName: SITE.appName,
+    title: `${SITE.shortName} — Annual Learning Record | ${SITE.orgShort}`,
+    description: SITE.description,
   },
-  other: {
-    'theme-color': '#FF4B3E',
+  twitter: {
+    card: 'summary_large_image',
+    title: `${SITE.shortName} — Annual Learning Record`,
+    description: SITE.description,
   },
+  appleWebApp: {
+    capable: true,
+    title: SITE.shortName,
+    statusBarStyle: 'default',
+  },
+  formatDetection: { telephone: false, email: false, address: false },
 };
 
 export const viewport: Viewport = {
@@ -37,7 +58,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={outfit.variable} suppressHydrationWarning>
+    <html lang="en-IN" className={outfit.variable} suppressHydrationWarning>
       <body className="font-sans antialiased bg-cream text-ink" suppressHydrationWarning>
         {children}
         <AppToaster />

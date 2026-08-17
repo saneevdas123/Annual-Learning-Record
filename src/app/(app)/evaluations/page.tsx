@@ -13,8 +13,16 @@ import {
 } from './actions';
 import { ActionForm } from '@/components/ActionForm';
 import { AppTabs } from '@/components/AppTabs';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Evaluations',
+  description: 'Year-wise and program-wise committee scoring, sign-off, and exam-cell export.',
+  path: '/evaluations',
+});
 
 export default async function EvaluationsPage({
   searchParams,

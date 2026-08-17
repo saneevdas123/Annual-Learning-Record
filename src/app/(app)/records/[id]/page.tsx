@@ -17,8 +17,26 @@ import {
 } from '../actions';
 import { ActionForm } from '@/components/ActionForm';
 import { AppTabs } from '@/components/AppTabs';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const record = await db.learningRecord.findUnique({
+    where: { id },
+    select: { title: true, description: true, course: { select: { code: true } } },
+  });
+  if (!record) {
+    return pageMeta({ title: 'Learning record', description: 'A student learning record.', path: `/records/${id}` });
+  }
+  return pageMeta({
+    title: record.title,
+    description: record.description?.slice(0, 160) || `${record.course.code} learning record on the CUTM ALR.`,
+    path: `/records/${id}`,
+  });
+}
 
 export default async function RecordDetailPage({
   params,

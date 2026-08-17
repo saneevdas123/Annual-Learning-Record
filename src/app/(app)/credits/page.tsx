@@ -5,8 +5,16 @@ import { AppTabs } from '@/components/AppTabs';
 import { fmtDate } from '@/lib/utils';
 import { ALR_CREDITS_PER_YEAR } from '@/lib/domain';
 import { studentOrgWhere } from '@/lib/access';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Credit ledger',
+  description: 'Compulsory-basket ALR credits posted from signed-off annual records.',
+  path: '/credits',
+});
 
 export default async function CreditsPage({
   searchParams,

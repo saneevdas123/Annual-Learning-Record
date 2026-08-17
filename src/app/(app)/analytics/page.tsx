@@ -6,8 +6,16 @@ import { PageHead, Stat } from '@/components/ui';
 import { AppTabs } from '@/components/AppTabs';
 import { CategoryBarChart } from '@/components/AnalyticsCharts';
 import { recordOrgWhere, studentOrgWhere } from '@/lib/access';
+import type { Metadata } from 'next';
+import { pageMeta } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = pageMeta({
+  title: 'Analytics',
+  description: 'Learning records by type, status, and campus — evidence for NAAC and NBA reporting.',
+  path: '/analytics',
+});
 
 export default async function AnalyticsPage({
   searchParams,
