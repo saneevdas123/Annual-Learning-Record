@@ -12,6 +12,9 @@ export async function proxy(req: NextRequest) {
   const session = token ? await verifySessionToken(token) : null;
 
   if (session && (pathname === '/login' || pathname === '/register')) {
+    if (session.mustChangePassword) {
+      return NextResponse.redirect(new URL('/account/password', req.url));
+    }
     return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
@@ -21,6 +24,10 @@ export async function proxy(req: NextRequest) {
     const url = new URL('/login', req.url);
     url.searchParams.set('next', pathname);
     return NextResponse.redirect(url);
+  }
+
+  if (session.mustChangePassword && !pathname.startsWith('/account/password')) {
+    return NextResponse.redirect(new URL('/account/password', req.url));
   }
 
   return NextResponse.next();

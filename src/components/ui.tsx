@@ -61,23 +61,31 @@ export function Tab({
   onClick,
   children,
   href,
+  count,
 }: {
   active?: boolean;
   onClick?: () => void;
   children: ReactNode;
   href?: string;
+  count?: number;
 }) {
   const cls = `ui-tab${active ? ' is-active' : ''}`;
+  const body = (
+    <>
+      {children}
+      {count != null ? <span className="ui-tab-count">{count}</span> : null}
+    </>
+  );
   if (href) {
     return (
-      <a href={href} className={cls} aria-selected={!!active}>
-        {children}
+      <a href={href} className={cls} role="tab" aria-selected={!!active}>
+        {body}
       </a>
     );
   }
   return (
     <button type="button" role="tab" aria-selected={!!active} className={cls} onClick={onClick}>
-      {children}
+      {body}
     </button>
   );
 }
@@ -490,7 +498,10 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-neo border border-dashed border-ink/15 bg-white px-6 py-14 text-center">
+    <div className="flex flex-col items-center justify-center rounded-neo border-2 border-dashed border-ink/20 bg-white px-6 py-14 text-center">
+      <span className="mb-3 inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-ink bg-accent-yellow text-lg font-bold shadow-hard-sm" aria-hidden>
+        ·
+      </span>
       <h3 className="text-lg font-bold text-ink">{title}</h3>
       {message && <p className="mt-1 max-w-sm text-sm text-ink/55">{message}</p>}
       {action && <div className="mt-5">{action}</div>}
@@ -509,6 +520,35 @@ export function Progress({ value, max = 100 }: { value: number; max?: number }) 
 
 const ERROR_RE =
   /fail|error|invalid|required|already|choose|select|could not|unable|missing|denied|unauthorized|not found|fix the|forbidden/i;
+
+export function useBusy() {
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  async function run<T>(fn: () => Promise<T>) {
+    if (lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    try {
+      return await fn();
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+  return [busy, run] as const;
+}
+
+export function isEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+export function requiredFields(spec: Record<string, [unknown, string]>) {
+  const errors: Record<string, string> = {};
+  for (const [key, [value, message]] of Object.entries(spec)) {
+    if (value == null || String(value).trim() === '') errors[key] = message;
+  }
+  return errors;
+}
 
 export function useToast() {
   const show = (m: unknown) => {

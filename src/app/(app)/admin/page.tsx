@@ -1,20 +1,18 @@
 import Link from 'next/link';
 import { requireRole } from '@/lib/session';
 import { db } from '@/lib/db';
-import { COMBINATIONS, ROLE_LABELS } from '@/lib/domain';
-import { academicYearOptions } from '@/lib/utils';
+import { COMBINATIONS } from '@/lib/domain';
 import { PageHead, Badge, EmptyState, Stat } from '@/components/ui';
-import {
-  createCampus,
-  createDepartment,
-  createProgram,
-  createCourse,
-  createUser,
-  updateUserRole,
-  assignMentor,
-  setUserActive,
-  enrollStudent,
-} from './actions';
+import { ActionForm } from '@/components/ActionForm';
+import { Prisma } from '@prisma/client';
+import { unenrollStudent } from './actions';
+import { AdminSearch } from './AdminForms';
+import { CourseCreateForm } from './CourseCreateForm';
+import { PersonCreateForm } from './PersonCreateForm';
+import { PersonEditor } from './PersonEditor';
+import { EnrollCreateForm } from './EnrollCreateForm';
+import { OrgWorkspace } from './OrgWorkspace';
+import { AppTabs } from '@/components/AppTabs';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,377 +21,298 @@ const TABS = [
   { key: 'courses', label: 'Courses' },
   { key: 'people', label: 'People' },
   { key: 'enroll', label: 'Enrollment' },
-];
+] as const;
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
+export default async function AdminPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; q?: string; role?: string }>;
+}) {
   await requireRole('ADMIN');
-  const { tab: tabParam } = await searchParams;
-  const tab = tabParam && TABS.some((t) => t.key === tabParam) ? tabParam : 'organization';
+  const sp = await searchParams;
+  const tab = TABS.some((t) => t.key === sp.tab) ? (sp.tab as (typeof TABS)[number]['key']) : 'organization';
+  const q = (sp.q ?? '').trim();
+  const roleFilter = (sp.role ?? '').trim();
 
-  const [campuses, departments, programs, faculty, users, courses, students, mentors] =
-    await Promise.all([
-      db.campus.findMany({ orderBy: { name: 'asc' } }),
-      db.department.findMany({ include: { campus: { select: { name: true } } }, orderBy: { name: 'asc' } }),
-      db.program.findMany({ include: { department: { select: { name: true } } }, orderBy: { name: 'asc' } }),
-      db.user.findMany({ where: { role: 'FACULTY' }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-      db.user.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
-      db.course.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
-      db.user.findMany({
-        where: { role: 'STUDENT' },
-        select: { id: true, name: true, registrationNumber: true },
-        orderBy: { name: 'asc' },
-      }),
-      db.user.findMany({ where: { role: 'MENTOR' }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-    ]);
+  const userWhere: Prisma.UserWhereInput = {
+    ...(roleFilter ? { role: roleFilter as never } : {}),
+    ...(q
+      ? {
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { email: { contains: q, mode: 'insensitive' } },
+            { registrationNumber: { contains: q, mode: 'insensitive' } },
+          ],
+        }
+      : {}),
+  };
+
+  const courseWhere: Prisma.CourseWhereInput = q
+    ? {
+        OR: [
+          { code: { contains: q, mode: 'insensitive' } },
+          { title: { contains: q, mode: 'insensitive' } },
+        ],
+      }
+    : {};
+
+  const [campuses, departments, programs, faculty, courseCount, userCount, enrollmentCount] = await Promise.all([
+    db.campus.findMany({ orderBy: { name: 'asc' } }),
+    db.department.findMany({ include: { campus: { select: { name: true } } }, orderBy: { name: 'asc' } }),
+    db.program.findMany({
+      include: { department: { include: { campus: { select: { name: true } } } } },
+      orderBy: { name: 'asc' },
+    }),
+    db.user.findMany({
+      where: { role: 'FACULTY', isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    }),
+    db.course.count(),
+    db.user.count(),
+    db.enrollment.count(),
+  ]);
+
+  const users =
+    tab === 'people'
+      ? await db.user.findMany({
+          where: userWhere,
+          include: { campus: { select: { name: true } }, department: { select: { name: true } } },
+          orderBy: { createdAt: 'desc' },
+          take: 120,
+        })
+      : [];
+
+  const mentors =
+    tab === 'people'
+      ? await db.user.findMany({
+          where: { role: 'MENTOR', isActive: true },
+          select: { id: true, name: true },
+          orderBy: { name: 'asc' },
+        })
+      : [];
+
+  const courses =
+    tab === 'courses' || tab === 'enroll'
+      ? await db.course.findMany({
+          where: tab === 'courses' ? courseWhere : {},
+          include: {
+            faculty: { select: { name: true } },
+            campus: { select: { name: true } },
+            department: { select: { name: true } },
+            _count: { select: { enrollments: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: tab === 'enroll' ? 200 : 120,
+        })
+      : [];
+
+  const students =
+    tab === 'enroll'
+      ? await db.user.findMany({
+          where: { role: 'STUDENT', isActive: true },
+          select: { id: true, name: true, registrationNumber: true },
+          orderBy: { name: 'asc' },
+        })
+      : [];
+
+  const enrollments =
+    tab === 'enroll'
+      ? await db.enrollment.findMany({
+          include: {
+            student: { select: { name: true, registrationNumber: true } },
+            course: { select: { code: true, title: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 80,
+        })
+      : [];
+
+  const counts = {
+    organization: campuses.length + departments.length + programs.length,
+    courses: courseCount,
+    people: userCount,
+    enroll: enrollmentCount,
+  };
+
+  const setup = [
+    { done: campuses.length > 0, label: 'Campus', hint: 'Where the school sits' },
+    { done: departments.length > 0, label: 'Department', hint: 'Needs a campus' },
+    { done: programs.length > 0, label: 'Program', hint: 'Needs a department' },
+    { done: faculty.length > 0, label: 'Faculty', hint: 'People tab' },
+    { done: courseCount > 0, label: 'Course', hint: 'Then enroll students' },
+  ];
 
   return (
     <div className="space-y-6">
       <PageHead
         eyebrow="Administration"
         title="Platform setup"
-        subtitle="Configure the institution, tag courses with their subject configuration, and manage people."
+        subtitle="Build the tree in order: campus → department → program → people → courses → enrollment."
       />
 
-      <nav className="shell-tabs" role="tablist">
-        {TABS.map((t) => (
-          <Link key={t.key} href={`/admin?tab=${t.key}`} className={`ui-tab${tab === t.key ? ' is-active' : ''}`}>
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+      <AppTabs
+        active={tab}
+        tabs={TABS.map((t) => ({
+          key: t.key,
+          label: t.label,
+          href: `/admin?tab=${t.key}`,
+          count: counts[t.key],
+        }))}
+      />
 
       {tab === 'organization' && (
-        <div className="grid gap-6 lg:grid-cols-3">
-          <FormCard title="Add campus" action={createCampus}>
-            <Field label="Campus name" name="name" placeholder="e.g. Paralakhemundi" required />
-            <Field label="Code" name="code" placeholder="PKD" required />
-            <Submit>Create campus</Submit>
-          </FormCard>
+        <div className="space-y-6">
+          <section className="card p-5">
+            <h2 className="font-bold text-ink">Setup checklist</h2>
+            <p className="mt-1 text-sm text-ink/55">Do these in order. Later tabs stay empty until the earlier ones exist.</p>
+            <ol className="mt-4 grid gap-2 sm:grid-cols-5">
+              {setup.map((s, i) => (
+                <li
+                  key={s.label}
+                  className={`rounded-neo border-2 px-3 py-2.5 ${s.done ? 'border-ink/10 bg-accent-mint/50' : 'border-ink bg-white'}`}
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-wide text-ink/40">Step {i + 1}</p>
+                  <p className="font-bold text-ink">{s.done ? '✓ ' : ''}{s.label}</p>
+                  <p className="text-[11px] text-ink/50">{s.hint}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
 
-          <FormCard title="Add department" action={createDepartment}>
-            <Select
-              label="Campus"
-              name="campusId"
-              options={campuses.map((c) => ({ value: c.id, label: c.name }))}
-              required
-            />
-            <Field label="Department name" name="name" placeholder="e.g. Computer Science" required />
-            <Submit>Create department</Submit>
-          </FormCard>
-
-          <FormCard title="Add program" action={createProgram}>
-            <Select
-              label="Department"
-              name="departmentId"
-              options={departments.map((d) => ({ value: d.id, label: `${d.name} (${d.campus.name})` }))}
-              required
-            />
-            <Field label="Program name" name="name" placeholder="e.g. B.Tech CSE" required />
-            <div className="grid grid-cols-2 gap-3">
-              <Select
-                label="Degree"
-                name="degree"
-                options={[
-                  { value: 'UG', label: 'UG' },
-                  { value: 'PG', label: 'PG' },
-                  { value: 'Diploma', label: 'Diploma' },
-                ]}
-              />
-              <Field label="Years" name="durationYears" type="number" defaultValue="4" />
-            </div>
-            <Submit>Create program</Submit>
-          </FormCard>
-
-          <div className="lg:col-span-3 grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-3">
             <Stat tone="gray" label="Campuses" value={campuses.length} />
             <Stat tone="brand" label="Departments" value={departments.length} />
             <Stat tone="amber" label="Programs" value={programs.length} />
           </div>
+
+          <OrgWorkspace campuses={campuses} departments={departments} programs={programs} />
         </div>
       )}
 
       {tab === 'courses' && (
-        <div className="grid gap-6 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <FormCard title="Create course" action={createCourse}>
-              <div className="grid grid-cols-2 gap-3">
-                <Field label="Code" name="code" placeholder="CS201" required />
-                <Field label="Credits" name="credits" type="number" defaultValue="4" />
+        <div className="space-y-4">
+          <AdminSearch tab="courses" q={q} placeholder="Search code or title" />
+          <div className="card overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 px-5 py-3">
+                  <h3 className="font-bold text-ink">
+                    Courses {q ? `(${courses.length} matches)` : `(${courseCount})`}
+                  </h3>
+                  <CourseCreateForm
+                    campuses={campuses}
+                    departments={departments}
+                    programs={programs.map((p) => ({ id: p.id, name: p.name, departmentId: p.departmentId }))}
+                    faculty={faculty}
+                  />
+                </div>
+                {courses.length === 0 ? (
+                  <EmptyState
+                    title={q ? 'No matching courses' : 'No courses yet'}
+                    message={q ? 'Try another search.' : 'Create a course once faculty and a program exist.'}
+                  />
+                ) : (
+                  <ul className="divide-y divide-ink/10">
+                    {courses.map((c) => (
+                      <li key={c.id}>
+                        <Link href={`/courses/${c.id}`} className="flex flex-wrap items-center gap-3 px-5 py-3 hover:bg-ink/[0.03]">
+                          <span className="text-xs font-bold text-ink/45">{c.code}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-ink">{c.title}</span>
+                            <span className="text-[11px] text-ink/45">
+                              {c.faculty.name} · {c.department.name} · {c._count.enrollments} enrolled
+                            </span>
+                          </span>
+                          <Badge tone="blue">{COMBINATIONS[c.combinationCode as keyof typeof COMBINATIONS]?.label}</Badge>
+                          <span className="hidden text-[11px] text-ink/45 sm:block">{c.academicYear}</span>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              <Field label="Title" name="title" placeholder="Data Structures" required />
-              <Select
-                label="Subject configuration"
-                name="combinationCode"
-                options={Object.values(COMBINATIONS).map((c) => ({ value: c.code, label: c.label }))}
-                required
-              />
-              <div className="grid grid-cols-2 gap-3">
-                <Select
-                  label="Academic year"
-                  name="academicYear"
-                  options={academicYearOptions().map((y) => ({ value: y, label: y }))}
-                  required
-                />
-                <Field label="Term" name="term" placeholder="Sem 3" required />
-              </div>
-              <Select
-                label="Campus"
-                name="campusId"
-                options={campuses.map((c) => ({ value: c.id, label: c.name }))}
-                required
-              />
-              <Select
-                label="Department"
-                name="departmentId"
-                options={departments.map((d) => ({ value: d.id, label: d.name }))}
-                required
-              />
-              <Select
-                label="Program"
-                name="programId"
-                options={programs.map((p) => ({ value: p.id, label: p.name }))}
-                required
-              />
-              <Select
-                label="Faculty"
-                name="facultyId"
-                options={faculty.map((f) => ({ value: f.id, label: f.name }))}
-                required
-              />
-              <Submit>Create course</Submit>
-            </FormCard>
-          </div>
-          <div className="lg:col-span-3">
-            <div className="card overflow-hidden">
-              <div className="border-b border-ink/10 px-5 py-3">
-                <h3 className="font-bold text-ink">Courses ({courses.length})</h3>
-              </div>
-              {courses.length === 0 ? (
-                <EmptyState title="No courses yet" message="Create your first course on the left." />
-              ) : (
-                <ul className="divide-y divide-ink/10">
-                  {courses.map((c) => (
-                    <li key={c.id} className="flex items-center gap-3 px-5 py-3">
-                      <span className="text-xs font-bold text-ink/45">{c.code}</span>
-                      <span className="min-w-0 flex-1 truncate text-sm text-ink">{c.title}</span>
-                      <Badge tone="blue">{COMBINATIONS[c.combinationCode as keyof typeof COMBINATIONS]?.label}</Badge>
-                      <span className="hidden text-[11px] text-ink/45 sm:block">{c.academicYear}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
         </div>
       )}
 
       {tab === 'people' && (
-        <div className="grid gap-6 lg:grid-cols-5">
-          <div className="lg:col-span-2">
-            <FormCard title="Add person" action={createUser}>
-              <Field label="Full name" name="name" required />
-              <Field label="Email" name="email" type="email" required />
-              <Field label="Registration no. (students)" name="registrationNumber" />
-              <Select
-                label="Role"
-                name="role"
-                options={Object.entries(ROLE_LABELS)
-                  .filter(([k]) => k !== 'INDUSTRY_SUPERVISOR')
-                  .map(([k, v]) => ({ value: k, label: v }))}
-              />
-              <Field label="Temp password" name="password" placeholder="Cutm@12345" />
-              <Submit>Create account</Submit>
-            </FormCard>
-          </div>
-          <div className="lg:col-span-3 space-y-3">
-            <div className="card overflow-hidden">
-              <div className="border-b border-ink/10 px-5 py-3">
-                <h3 className="font-bold text-ink">People ({users.length})</h3>
+        <div className="space-y-4">
+          <AdminSearch tab="people" q={q} role={roleFilter} placeholder="Search name, email, or registration no." />
+          <div className="card overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 px-5 py-3">
+                  <div>
+                    <h3 className="font-bold text-ink">
+                      People {q || roleFilter ? `(${users.length} shown)` : `(${userCount})`}
+                    </h3>
+                    <p className="text-xs text-ink/45">Open Edit to place someone, assign a mentor, or resend login.</p>
+                  </div>
+                  <PersonCreateForm
+                    campuses={campuses}
+                    departments={departments}
+                    programs={programs.map((p) => ({ id: p.id, name: p.name, departmentId: p.departmentId }))}
+                    mentors={mentors}
+                  />
+                </div>
+                {users.length === 0 ? (
+                  <EmptyState
+                    title={q || roleFilter ? 'No matching people' : 'No people yet'}
+                    message="Add a person, or ask students to self-register with a university email."
+                  />
+                ) : (
+                  <ul className="divide-y divide-ink/10">
+                    {users.map((u) => (
+                      <PersonEditor
+                        key={u.id}
+                        person={u}
+                        campuses={campuses}
+                        departments={departments}
+                        programs={programs.map((p) => ({ id: p.id, name: p.name, departmentId: p.departmentId }))}
+                        mentors={mentors}
+                      />
+                    ))}
+                  </ul>
+                )}
               </div>
-              <ul className="divide-y divide-ink/10">
-                {users.map((u) => (
-                  <li key={u.id} className="space-y-2 px-5 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="min-w-0 flex-1">
-                        <span className="text-sm font-semibold text-ink">{u.name}</span>
-                        <span className="ml-2 text-[11px] text-ink/45">{u.email}</span>
-                      </span>
-                      <Badge tone={u.isActive ? 'blue' : 'red'}>{ROLE_LABELS[u.role]}</Badge>
-                      <form action={setUserActive}>
-                        <input type="hidden" name="userId" value={u.id} />
-                        <input type="hidden" name="active" value={(!u.isActive).toString()} />
-                        <button className="btn-ghost !px-2 !py-1 text-[11px]">
-                          {u.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                      </form>
-                    </div>
-                    <div className="flex flex-wrap items-end gap-2">
-                      <form action={updateUserRole} className="flex flex-wrap items-end gap-2">
-                        <input type="hidden" name="userId" value={u.id} />
-                        <select name="role" defaultValue={u.role} className="input !w-auto !py-1 text-xs">
-                          {Object.entries(ROLE_LABELS).map(([k, v]) => (
-                            <option key={k} value={k}>
-                              {v}
-                            </option>
-                          ))}
-                        </select>
-                        <select name="campusId" defaultValue={u.campusId ?? ''} className="input !w-auto !py-1 text-xs">
-                          <option value="">— campus —</option>
-                          {campuses.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
-                            </option>
-                          ))}
-                        </select>
-                        <select
-                          name="departmentId"
-                          defaultValue={u.departmentId ?? ''}
-                          className="input !w-auto !py-1 text-xs"
-                        >
-                          <option value="">— dept —</option>
-                          {departments.map((d) => (
-                            <option key={d.id} value={d.id}>
-                              {d.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button className="btn-ghost !px-2 !py-1 text-[11px]">Save</button>
-                      </form>
-                      {u.role === 'STUDENT' && (
-                        <form action={assignMentor} className="flex items-end gap-2">
-                          <input type="hidden" name="studentId" value={u.id} />
-                          <select
-                            name="mentorId"
-                            defaultValue={u.mentorId ?? ''}
-                            className="input !w-auto !py-1 text-xs"
-                          >
-                            <option value="">— mentor —</option>
-                            {mentors.map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name}
-                              </option>
-                            ))}
-                          </select>
-                          <button className="btn-ghost !px-2 !py-1 text-[11px]">Assign</button>
-                        </form>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
         </div>
       )}
 
       {tab === 'enroll' && (
-        <div className="max-w-xl">
-          <FormCard title="Enroll a student in a course" action={enrollStudent}>
-            <Select
-              label="Student"
-              name="studentId"
-              options={students.map((s) => ({
-                value: s.id,
-                label: `${s.name}${s.registrationNumber ? ` (${s.registrationNumber})` : ''}`,
-              }))}
-              required
-            />
-            <Select
-              label="Course"
-              name="courseId"
-              options={courses.map((c) => ({ value: c.id, label: `${c.code} — ${c.title}` }))}
-              required
-            />
-            <Submit>Enroll</Submit>
-          </FormCard>
-          <p className="mt-3 text-sm text-ink/55">
-            Enrolling a student makes the course&apos;s required learning records appear on their dashboard automatically.
-          </p>
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Stat tone="gray" label="Active students" value={students.length} />
+            <Stat tone="brand" label="Courses" value={courseCount} />
+            <Stat tone="green" label="Enrollments" value={enrollmentCount} />
+          </div>
+          <div className="card overflow-hidden">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-ink/10 px-5 py-3">
+                  <h3 className="font-bold text-ink">Recent enrollments ({enrollmentCount})</h3>
+                  <EnrollCreateForm students={students} courses={courses} />
+                </div>
+                {enrollments.length === 0 ? (
+                  <EmptyState
+                    title="Nobody enrolled yet"
+                    message="Enroll a student so their required learning records appear."
+                  />
+                ) : (
+                  <ul className="divide-y divide-ink/10">
+                    {enrollments.map((e) => (
+                      <li key={e.id} className="flex flex-wrap items-center gap-3 px-5 py-3">
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-ink">{e.student.name}</span>
+                          <span className="text-[11px] text-ink/45">
+                            {e.course.code} — {e.course.title}
+                            {e.student.registrationNumber ? ` · ${e.student.registrationNumber}` : ''}
+                          </span>
+                        </span>
+                        <ActionForm action={unenrollStudent} success="Removed from course.">
+                          <input type="hidden" name="enrollmentId" value={e.id} />
+                          <button className="btn-ghost !px-3 !py-1.5 text-xs">Remove</button>
+                        </ActionForm>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function FormCard({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action: (fd: FormData) => void | Promise<void>;
-  children: React.ReactNode;
-}) {
-  return (
-    <form action={action} className="card p-5 space-y-3">
-      <h3 className="font-bold text-ink">{title}</h3>
-      {children}
-    </form>
-  );
-}
-
-function Field({
-  label,
-  name,
-  type = 'text',
-  placeholder,
-  required,
-  defaultValue,
-}: {
-  label: string;
-  name: string;
-  type?: string;
-  placeholder?: string;
-  required?: boolean;
-  defaultValue?: string;
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <input
-        name={name}
-        type={type}
-        placeholder={placeholder}
-        required={required}
-        defaultValue={defaultValue}
-        className="input"
-      />
-    </div>
-  );
-}
-
-function Select({
-  label,
-  name,
-  options,
-  required,
-}: {
-  label: string;
-  name: string;
-  options: { value: string; label: string }[];
-  required?: boolean;
-}) {
-  return (
-    <div>
-      <label className="label">{label}</label>
-      <select name={name} required={required} defaultValue="" className="input">
-        <option value="" disabled>
-          Select…
-        </option>
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-}
-
-function Submit({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex justify-end pt-1">
-      <button className="btn-primary">{children}</button>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { requireUser } from '@/lib/session';
-import { fail, ok } from '@/lib/action-result';
+import { ok } from '@/lib/action-result';
 
 export async function acceptDeclaration(): Promise<void> {
   const user = await requireUser();
@@ -21,6 +21,3 @@ export async function updateProfile(formData: FormData): Promise<void> {
   return ok();
 }
 
-export async function toggleMfa(_formData: FormData): Promise<void> {
-  return fail('Two-factor authentication is not available.');
-}

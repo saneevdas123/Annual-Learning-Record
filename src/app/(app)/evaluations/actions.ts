@@ -6,6 +6,9 @@ import { db } from '@/lib/db';
 import { requireRole } from '@/lib/session';
 import { ALR_CREDITS_PER_YEAR } from '@/lib/domain';
 import { fail, ok } from '@/lib/action-result';
+import { assertStudentInScope } from '@/lib/access';
+import { sendMailSafe, yearSignedEmail } from '@/lib/mailer';
+import { getSiteUrl } from '@/lib/site';
 
 const rubricSchema = z.object({
   studentId: z.string().min(1),
@@ -18,7 +21,7 @@ const rubricSchema = z.object({
 });
 
 export async function saveYearEvaluation(formData: FormData): Promise<void> {
-  await requireRole('HOD', 'DEAN', 'ADMIN');
+  const user = await requireRole('HOD', 'DEAN', 'ADMIN');
   const parsed = rubricSchema.safeParse({
     studentId: formData.get('studentId'),
     academicYear: formData.get('academicYear'),
@@ -30,6 +33,11 @@ export async function saveYearEvaluation(formData: FormData): Promise<void> {
   });
   if (!parsed.success) return fail('Check the rubric scores.');
   const p = parsed.data;
+  try {
+    await assertStudentInScope(user, p.studentId);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'Student is outside your organisation.');
+  }
   const total =
     p.coverageCourses + p.coverageComponents + p.qualityContent + p.aesthetics + p.presentation;
 
@@ -61,9 +69,14 @@ export async function saveYearEvaluation(formData: FormData): Promise<void> {
 }
 
 export async function signoffYearEvaluation(formData: FormData): Promise<void> {
-  await requireRole('HOD', 'DEAN', 'ADMIN');
+  const user = await requireRole('HOD', 'DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
   const academicYear = String(formData.get('academicYear'));
+  try {
+    await assertStudentInScope(user, studentId);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'Student is outside your organisation.');
+  }
 
   const evaln = await db.yearEvaluation.findUnique({
     where: { studentId_academicYear: { studentId, academicYear } },
@@ -98,15 +111,31 @@ export async function signoffYearEvaluation(formData: FormData): Promise<void> {
     },
   });
 
+  const student = await db.user.findUnique({
+    where: { id: studentId },
+    select: { name: true, email: true },
+  });
+  const mail = yearSignedEmail({
+    studentName: student?.name,
+    academicYear,
+    dashboardUrl: `${getSiteUrl()}/credits`,
+  });
+  await sendMailSafe({ to: student?.email, ...mail });
+
   revalidatePath('/evaluations');
   revalidatePath('/credits');
   return ok();
 }
 
 export async function exportYearEvaluation(formData: FormData): Promise<void> {
-  await requireRole('DEAN', 'ADMIN');
+  const user = await requireRole('DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
   const academicYear = String(formData.get('academicYear'));
+  try {
+    await assertStudentInScope(user, studentId);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'Student is outside your organisation.');
+  }
 
   await db.yearEvaluation.update({
     where: { studentId_academicYear: { studentId, academicYear } },
@@ -121,8 +150,13 @@ export async function exportYearEvaluation(formData: FormData): Promise<void> {
 }
 
 export async function compileProgramEvaluation(formData: FormData): Promise<void> {
-  await requireRole('DEAN', 'ADMIN');
+  const user = await requireRole('DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
+  try {
+    await assertStudentInScope(user, studentId);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'Student is outside your organisation.');
+  }
 
   const years = await db.yearEvaluation.findMany({
     where: { studentId, status: { in: ['SIGNED_OFF', 'EXPORTED'] } },
@@ -142,8 +176,13 @@ export async function compileProgramEvaluation(formData: FormData): Promise<void
 }
 
 export async function exportProgramEvaluation(formData: FormData): Promise<void> {
-  await requireRole('DEAN', 'ADMIN');
+  const user = await requireRole('DEAN', 'ADMIN');
   const studentId = String(formData.get('studentId'));
+  try {
+    await assertStudentInScope(user, studentId);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'Student is outside your organisation.');
+  }
   await db.programEvaluation.update({
     where: { studentId },
     data: { status: 'EXPORTED', examCellExportAt: new Date() },

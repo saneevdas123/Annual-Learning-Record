@@ -11,18 +11,22 @@ import {
   compileProgramEvaluation,
   exportProgramEvaluation,
 } from './actions';
+import { ActionForm } from '@/components/ActionForm';
+import { AppTabs } from '@/components/AppTabs';
 
 export const dynamic = 'force-dynamic';
 
 export default async function EvaluationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ year?: string; q?: string }>;
+  searchParams: Promise<{ year?: string; q?: string; tab?: string }>;
 }) {
   const user = await requireRole('HOD', 'DEAN', 'ADMIN');
   const sp = await searchParams;
   const year = sp.year || currentAcademicYear();
   const q = (sp.q ?? '').trim().toLowerCase();
+  const canProgram = user.role !== 'HOD';
+  const tab = canProgram && sp.tab === 'program' ? 'program' : 'year';
 
   const students = await db.user.findMany({
     where: studentOrgWhere(user),
@@ -75,6 +79,7 @@ export default async function EvaluationsPage({
               className="input !w-44 !py-1.5 text-sm"
               placeholder="Search student…"
             />
+            <input type="hidden" name="tab" value={tab} />
             <select name="year" defaultValue={year} className="input !w-auto !py-1.5 text-sm">
               {academicYearOptions().map((y) => (
                 <option key={y} value={y}>
@@ -93,11 +98,33 @@ export default async function EvaluationsPage({
         <Stat tone="amber" label="Awaiting evaluation" value={pending} />
       </div>
 
+      {canProgram ? (
+        <AppTabs
+          active={tab}
+          tabs={[
+            {
+              key: 'year',
+              label: 'Year-wise',
+              href: `/evaluations?tab=year&year=${encodeURIComponent(year)}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ''}`,
+              count: visible.length,
+            },
+            {
+              key: 'program',
+              label: 'Program-wise',
+              href: `/evaluations?tab=program&year=${encodeURIComponent(year)}${sp.q ? `&q=${encodeURIComponent(sp.q)}` : ''}`,
+              count: visible.filter((s) => progByStudent.has(s.id)).length,
+            },
+          ]}
+        />
+      ) : (
+        <h2 className="text-lg font-bold text-ink">Year-wise · {year}</h2>
+      )}
+
       {visible.length === 0 ? (
         <EmptyState title="No students in scope" message="No students match your department/campus or search." />
-      ) : (
+      ) : tab === 'year' ? (
         <section className="space-y-3">
-          <h2 className="text-lg font-bold text-ink">Year-wise · {year}</h2>
+          {canProgram ? <h2 className="text-lg font-bold text-ink">Year-wise · {year}</h2> : null}
           {visible.map((s) => {
             const ev = evalByStudent.get(s.id);
             const approved = approvedByStudent.get(s.id) ?? 0;
@@ -115,7 +142,7 @@ export default async function EvaluationsPage({
                 </summary>
 
                 <div className="border-t border-ink/10 bg-cream/40 p-5">
-                  <form action={saveYearEvaluation} className="space-y-4">
+                  <ActionForm action={saveYearEvaluation} success="Rubric saved." className="space-y-4">
                     <input type="hidden" name="studentId" value={s.id} />
                     <input type="hidden" name="academicYear" value={year} />
                     <div className="grid gap-3 sm:grid-cols-5">
@@ -137,22 +164,22 @@ export default async function EvaluationsPage({
                     <div className="flex flex-wrap justify-end gap-2">
                       <button className="btn-ghost">Save rubric</button>
                     </div>
-                  </form>
+                  </ActionForm>
 
                   <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-ink/10 pt-3">
                     {ev && ev.status === 'IN_REVIEW' && (
-                      <form action={signoffYearEvaluation}>
+                      <ActionForm action={signoffYearEvaluation} success="Year signed off.">
                         <input type="hidden" name="studentId" value={s.id} />
                         <input type="hidden" name="academicYear" value={year} />
                         <button className="btn-primary">Sign off &amp; post 1 credit</button>
-                      </form>
+                      </ActionForm>
                     )}
                     {ev && ev.status === 'SIGNED_OFF' && user.role !== 'HOD' && (
-                      <form action={exportYearEvaluation}>
+                      <ActionForm action={exportYearEvaluation} success="Exported to exam cell.">
                         <input type="hidden" name="studentId" value={s.id} />
                         <input type="hidden" name="academicYear" value={year} />
                         <button className="btn-primary">Export to exam cell</button>
-                      </form>
+                      </ActionForm>
                     )}
                     {ev?.examCellExportAt && (
                       <span className="self-center text-[11px] font-bold text-ink/55">Exported ✓</span>
@@ -163,9 +190,7 @@ export default async function EvaluationsPage({
             );
           })}
         </section>
-      )}
-
-      {user.role !== 'HOD' && visible.length > 0 && (
+      ) : (
         <section className="space-y-3">
           <h2 className="text-lg font-bold text-ink">Program-wise · cumulated</h2>
           <div className="card overflow-hidden divide-y divide-ink/10">
@@ -180,15 +205,15 @@ export default async function EvaluationsPage({
                     </span>
                   </span>
                   {prog && <SealDisc status={prog.status} />}
-                  <form action={compileProgramEvaluation}>
+                  <ActionForm action={compileProgramEvaluation} success="Program compiled.">
                     <input type="hidden" name="studentId" value={s.id} />
                     <button className="btn-ghost !px-3 !py-1.5 text-xs">Compile</button>
-                  </form>
+                  </ActionForm>
                   {prog && prog.status !== 'EXPORTED' && (
-                    <form action={exportProgramEvaluation}>
+                    <ActionForm action={exportProgramEvaluation} success="Program exported.">
                       <input type="hidden" name="studentId" value={s.id} />
                       <button className="btn-primary !px-3 !py-1.5 text-xs">Export</button>
-                    </form>
+                    </ActionForm>
                   )}
                 </div>
               );

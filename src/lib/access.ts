@@ -34,10 +34,81 @@ export async function loadRecordForAccess(recordId: string) {
   return db.learningRecord.findUnique({
     where: { id: recordId },
     include: {
-      student: { select: { id: true, mentorId: true, departmentId: true, campusId: true } },
+      student: { select: { id: true, name: true, mentorId: true, departmentId: true, campusId: true } },
       course: { select: { id: true, facultyId: true, departmentId: true, campusId: true, combinationCode: true } },
     },
   });
+}
+
+export function canViewRecord(user: CurrentUser, record: RecordForAccess): boolean {
+  if (user.role === 'ADMIN') return true;
+  if (record.studentId === user.id) return true;
+  return canReviewRecord(user, record);
+}
+
+export async function assertCanViewCourse(user: CurrentUser, courseId: string) {
+  const course = await db.course.findFirst({
+    where: { id: courseId, ...courseOrgWhere(user) },
+  });
+  if (course) return course;
+
+  if (user.role === 'STUDENT') {
+    const enrollment = await db.enrollment.findUnique({
+      where: { studentId_courseId: { studentId: user.id, courseId } },
+    });
+    if (enrollment) {
+      return db.course.findUnique({ where: { id: courseId } });
+    }
+  }
+
+  if (user.role === 'MENTOR') {
+    const mentee = await db.enrollment.findFirst({
+      where: { courseId, student: { mentorId: user.id } },
+    });
+    if (mentee) return db.course.findUnique({ where: { id: courseId } });
+  }
+
+  return null;
+}
+
+export async function assertStudentInScope(user: CurrentUser, studentId: string) {
+  const student = await db.user.findFirst({
+    where: { id: studentId, ...studentOrgWhere(user) },
+  });
+  if (!student) {
+    throw new Error('That student is outside your organisation.');
+  }
+  return student;
+}
+
+export async function findActorForStep(
+  record: {
+    course: { facultyId: string; departmentId: string };
+    student: { mentorId: string | null; departmentId: string | null };
+  },
+  stepRole: string
+) {
+  if (stepRole === 'FACULTY') {
+    return db.user.findUnique({
+      where: { id: record.course.facultyId },
+      select: { id: true, name: true, email: true },
+    });
+  }
+  if (stepRole === 'MENTOR' && record.student.mentorId) {
+    return db.user.findUnique({
+      where: { id: record.student.mentorId },
+      select: { id: true, name: true, email: true },
+    });
+  }
+  if (stepRole === 'HOD') {
+    const departmentId = record.student.departmentId ?? record.course.departmentId;
+    if (!departmentId) return null;
+    return db.user.findFirst({
+      where: { role: 'HOD', isActive: true, departmentId },
+      select: { id: true, name: true, email: true },
+    });
+  }
+  return null;
 }
 
 export function canReviewRecord(user: CurrentUser, record: RecordForAccess): boolean {

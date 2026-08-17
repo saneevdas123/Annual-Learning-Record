@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useActionState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { registerAction } from '../actions';
-import GooglyEyes from '@/components/GooglyEyes';
+import { CutmMark } from '@/components/CutmMark';
 import { PasswordField } from '@/components/PasswordField';
 
 function SubmitButton() {
@@ -29,16 +29,13 @@ function SubmitButton() {
 }
 
 export default function RegisterPage() {
-  const [state, action] = useActionState(registerAction, undefined);
+  const [state, action, pending] = useActionState(registerAction, undefined);
 
   return (
     <div className="min-h-screen bg-cream text-ink flex flex-col">
       <header className="sticky top-0 z-40 bg-cream/95 backdrop-blur border-b-2 border-ink">
         <div className="max-w-5xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between gap-3">
-          <Link href="/" className="inline-flex items-center gap-2 font-bold tracking-tight">
-            <GooglyEyes size={24} />
-            <span>ALR</span>
-          </Link>
+          <CutmMark variant="compact" title="ALR" subtitle="CUTM" priority />
           <Link href="/login" className="btn-ghost !py-2 !px-4 text-sm">
             Sign in
           </Link>
@@ -87,10 +84,12 @@ export default function RegisterPage() {
 
         <div className="flex items-center justify-center p-6 sm:p-10">
           <div className="w-full max-w-sm">
-            <div className="login-board">
+            <div className={`login-board${pending ? ' is-loading' : ''}`}>
               <div className="login-board-inner">
                 <h2 className="text-2xl font-bold mb-1">Create account</h2>
-                <p className="text-sm text-ink/60 mb-6">Register as a student to file learning records.</p>
+                <p className="text-sm text-ink/60 mb-6">
+                  Register as a student with your university email (@cutm.ac.in).
+                </p>
 
                 {state?.error && (
                   <div className="mb-4 text-sm text-ink ui-callout-danger px-3 py-2">{state.error}</div>

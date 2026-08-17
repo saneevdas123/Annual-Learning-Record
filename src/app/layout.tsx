@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   description:
     'The Annual Learning Record platform for Centurion University of Technology and Management — recording, evaluating, and crediting student learning across the program.',
   applicationName: 'ALR',
+  icons: {
+    icon: '/cutm-logo.png',
+    apple: '/cutm-logo.png',
+  },
   other: {
     'theme-color': '#FF4B3E',
   },

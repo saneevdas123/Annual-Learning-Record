@@ -1,15 +1,22 @@
 import { requireRole } from '@/lib/session';
 import { db } from '@/lib/db';
 import { PageHead, EmptyState, Stat, Badge, Progress } from '@/components/ui';
+import { AppTabs } from '@/components/AppTabs';
 import { fmtDate } from '@/lib/utils';
 import { ALR_CREDITS_PER_YEAR } from '@/lib/domain';
 import { studentOrgWhere } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
-export default async function CreditsPage() {
+export default async function CreditsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const user = await requireRole('STUDENT', 'HOD', 'DEAN', 'ADMIN');
   const isStudent = user.role === 'STUDENT';
+  const { tab: rawTab } = await searchParams;
+  const tab = rawTab === 'exported' ? 'exported' : 'all';
 
   if (isStudent) {
     const [entries, program] = await Promise.all([
@@ -56,26 +63,40 @@ export default async function CreditsPage() {
             message="Credits are posted when your annual record is signed off by the Dean's committee."
           />
         ) : (
-          <div className="card overflow-hidden divide-y divide-ink/10">
-            {entries.map((e) => (
-              <div key={e.id} className="flex items-center gap-4 px-5 py-4">
-                <span className="text-sm font-bold text-ink">{e.academicYear}</span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <Badge tone="amber">{e.basket}</Badge>
-                    <span className="text-[11px] text-ink/45">{e.source}</span>
+          <div className="space-y-4">
+            <AppTabs
+              active={tab}
+              tabs={[
+                { key: 'all', label: 'All', href: '/credits', count: entries.length },
+                {
+                  key: 'exported',
+                  label: 'Exported',
+                  href: '/credits?tab=exported',
+                  count: entries.filter((e) => e.examCellRef).length,
+                },
+              ]}
+            />
+            <div className="card overflow-hidden divide-y divide-ink/10">
+              {(tab === 'exported' ? entries.filter((e) => e.examCellRef) : entries).map((e) => (
+                <div key={e.id} className="flex items-center gap-4 px-5 py-4">
+                  <span className="text-sm font-bold text-ink">{e.academicYear}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2">
+                      <Badge tone="amber">{e.basket}</Badge>
+                      <span className="text-[11px] text-ink/45">{e.source}</span>
+                    </span>
+                    {e.examCellRef && (
+                      <span className="mt-0.5 block text-[10px] font-semibold text-ink/55">{e.examCellRef}</span>
+                    )}
                   </span>
-                  {e.examCellRef && (
-                    <span className="mt-0.5 block text-[10px] font-semibold text-ink/55">{e.examCellRef}</span>
-                  )}
-                </span>
-                <span className="text-lg font-bold text-ink">
-                  {e.credits}
-                  <span className="text-xs text-ink/45"> cr</span>
-                </span>
-                <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
-              </div>
-            ))}
+                  <span className="text-lg font-bold text-ink">
+                    {e.credits}
+                    <span className="text-xs text-ink/45"> cr</span>
+                  </span>
+                  <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -109,20 +130,34 @@ export default async function CreditsPage() {
       {entries.length === 0 ? (
         <EmptyState title="No credits posted yet" message="Credits appear here as annual evaluations are signed off." />
       ) : (
-        <div className="card overflow-hidden divide-y divide-ink/10">
-          {entries.map((e) => (
-            <div key={e.id} className="flex items-center gap-4 px-5 py-3.5">
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-ink">{e.student.name}</span>
-                <span className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
-                  {e.student.registrationNumber ?? '—'} · {e.academicYear}
+        <div className="space-y-4">
+          <AppTabs
+            active={tab}
+            tabs={[
+              { key: 'all', label: 'All', href: '/credits', count: entries.length },
+              {
+                key: 'exported',
+                label: 'Exported',
+                href: '/credits?tab=exported',
+                count: entries.filter((e) => e.examCellRef).length,
+              },
+            ]}
+          />
+          <div className="card overflow-hidden divide-y divide-ink/10">
+            {(tab === 'exported' ? entries.filter((e) => e.examCellRef) : entries).map((e) => (
+              <div key={e.id} className="flex items-center gap-4 px-5 py-3.5">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-semibold text-ink">{e.student.name}</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-ink/45">
+                    {e.student.registrationNumber ?? '—'} · {e.academicYear}
+                  </span>
                 </span>
-              </span>
-              {e.examCellRef && <Badge tone="amber">exported</Badge>}
-              <span className="text-sm font-bold text-ink">{e.credits} cr</span>
-              <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
-            </div>
-          ))}
+                {e.examCellRef && <Badge tone="amber">exported</Badge>}
+                <span className="text-sm font-bold text-ink">{e.credits} cr</span>
+                <span className="hidden text-[11px] text-ink/45 sm:block">{fmtDate(e.postedAt)}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

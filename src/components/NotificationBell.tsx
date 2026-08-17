@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import { markAllNotificationsRead, markNotificationRead } from '@/app/(app)/notifications/actions';
 import { fmtDate } from '@/lib/utils';
 
@@ -17,6 +17,8 @@ export type Notice = {
 export function NotificationBell({ items }: { items: Notice[] }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const [, start] = useTransition();
   const unread = items.filter((n) => !n.read).length;
 
   useEffect(() => {
@@ -33,6 +35,16 @@ export function NotificationBell({ items }: { items: Notice[] }) {
       document.removeEventListener('keydown', onKey);
     };
   }, []);
+
+  function openNotice(n: Notice) {
+    start(async () => {
+      const fd = new FormData();
+      fd.set('id', n.id);
+      await markNotificationRead(fd);
+      setOpen(false);
+      if (n.link) router.push(n.link);
+    });
+  }
 
   return (
     <div ref={wrapRef} className="relative">
@@ -63,11 +75,13 @@ export function NotificationBell({ items }: { items: Notice[] }) {
           <div className="flex items-center justify-between px-3 py-2 border-b border-ink/10">
             <p className="text-sm font-bold text-ink">Notifications</p>
             {unread > 0 ? (
-              <form action={markAllNotificationsRead}>
-                <button type="submit" className="text-xs font-semibold text-brand">
-                  Mark all read
-                </button>
-              </form>
+              <button
+                type="button"
+                className="text-xs font-semibold text-brand"
+                onClick={() => start(() => markAllNotificationsRead())}
+              >
+                Mark all read
+              </button>
             ) : null}
           </div>
           {items.length === 0 ? (
@@ -76,27 +90,17 @@ export function NotificationBell({ items }: { items: Notice[] }) {
             <ul>
               {items.map((n) => (
                 <li key={n.id} className={`border-t border-ink/8 ${n.read ? '' : 'bg-accent-yellow/40'}`}>
-                  <form action={markNotificationRead}>
-                    <input type="hidden" name="id" value={n.id} />
-                    {n.link ? (
-                      <Link
-                        href={n.link}
-                        className="block px-3 py-2.5 hover:bg-ink/[0.03]"
-                        onClick={() => setOpen(false)}
-                      >
-                        <p className="text-sm font-semibold text-ink">{n.title}</p>
-                        {n.message ? <p className="mt-0.5 text-xs text-ink/55 leading-snug">{n.message}</p> : null}
-                        <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-ink/40">
-                          {fmtDate(n.createdAt)}
-                        </p>
-                      </Link>
-                    ) : (
-                      <button type="submit" className="w-full text-left px-3 py-2.5 hover:bg-ink/[0.03]">
-                        <p className="text-sm font-semibold text-ink">{n.title}</p>
-                        {n.message ? <p className="mt-0.5 text-xs text-ink/55 leading-snug">{n.message}</p> : null}
-                      </button>
-                    )}
-                  </form>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2.5 hover:bg-ink/[0.03]"
+                    onClick={() => openNotice(n)}
+                  >
+                    <p className="text-sm font-semibold text-ink">{n.title}</p>
+                    {n.message ? <p className="mt-0.5 text-xs text-ink/55 leading-snug">{n.message}</p> : null}
+                    <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-ink/40">
+                      {fmtDate(n.createdAt)}
+                    </p>
+                  </button>
                 </li>
               ))}
             </ul>

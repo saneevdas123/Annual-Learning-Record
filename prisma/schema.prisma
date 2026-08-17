@@ -194,6 +194,7 @@ model User {
   avatarColor        String   @default("#20223f")
   isActive           Boolean  @default(true)
   mfaEnabled         Boolean  @default(false)
+  mustChangePassword Boolean  @default(false)
   eDeclarationAt     DateTime? // one-time declaration accepted (finding z)
   bio                String?
 

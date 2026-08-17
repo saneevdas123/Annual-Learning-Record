@@ -15,6 +15,7 @@ export interface CurrentUser {
   programId: string | null;
   mentorId: string | null;
   eDeclarationAt: Date | null;
+  mustChangePassword: boolean;
 }
 
 // Reads the session cookie, verifies the JWT, and loads the user.
@@ -40,6 +41,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
       mentorId: true,
       isActive: true,
       eDeclarationAt: true,
+      mustChangePassword: true,
     },
   });
   if (!user || !user.isActive) return null;

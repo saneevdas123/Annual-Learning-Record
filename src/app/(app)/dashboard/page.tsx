@@ -40,6 +40,18 @@ async function StudentDashboard({ user }: { user: CurrentUser }) {
         subtitle="Your learning, recorded course by course and carried into credit."
       />
 
+      {!user.eDeclarationAt ? (
+        <div className="ui-callout-warn p-4">
+          <p className="font-bold text-ink">Academic integrity declaration</p>
+          <p className="mt-1 text-sm text-ink/70">
+            Accept the declaration on your profile before you can file or submit learning records.
+          </p>
+          <Link href="/profile" className="mt-3 inline-flex btn-primary !py-2 !px-4 text-sm">
+            Open profile
+          </Link>
+        </div>
+      ) : null}
+
       <div className="grid gap-3 sm:gap-4 grid-cols-2 lg:grid-cols-4">
         <Stat tone="gray" label="Courses enrolled" value={summary.courses} sub="this record" />
         <Stat tone="brand" label="Records filed" value={summary.totalRecords} sub="all types" />

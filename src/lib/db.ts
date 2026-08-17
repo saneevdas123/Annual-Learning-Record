@@ -5,8 +5,17 @@ import { PrismaClient } from '@prisma/client';
 // point DATABASE_URL at a pooler (PgBouncer / Neon / Supabase pooling) in prod.
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
+function datasourceUrl() {
+  const url = process.env.DATABASE_URL ?? '';
+  if (!url || /[?&]connection_limit=/.test(url)) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  const limit = process.env.NODE_ENV === 'production' ? '5' : '3';
+  return `${url}${sep}connection_limit=${limit}&pool_timeout=15`;
+}
+
 function create() {
   return new PrismaClient({
+    datasources: { db: { url: datasourceUrl() } },
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
 }

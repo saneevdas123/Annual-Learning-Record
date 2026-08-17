@@ -7,7 +7,7 @@ import { useFormStatus } from 'react-dom';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 import { loginAction } from '../actions';
-import GooglyEyes from '@/components/GooglyEyes';
+import { CutmMark } from '@/components/CutmMark';
 import { PasswordField } from '@/components/PasswordField';
 
 function SubmitButton() {
@@ -31,12 +31,12 @@ function SubmitButton() {
 }
 
 function LoginForm() {
-  const [state, action] = useActionState(loginAction, undefined);
+  const [state, action, pending] = useActionState(loginAction, undefined);
   const searchParams = useSearchParams();
   const next = searchParams.get('next') || '/dashboard';
 
   return (
-    <div className="login-board">
+    <div className={`login-board${pending ? ' is-loading' : ''}`}>
       <div className="login-board-inner">
         <h2 className="text-2xl font-bold mb-1">Sign in</h2>
         <p className="text-sm text-ink/60 mb-6">Use your university email to open the learning record.</p>
@@ -76,10 +76,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-cream text-ink flex flex-col">
       <header className="sticky top-0 z-40 bg-cream/95 backdrop-blur border-b-2 border-ink">
         <div className="max-w-5xl mx-auto px-4 h-14 sm:h-16 flex items-center justify-between gap-3">
-          <Link href="/" className="inline-flex items-center gap-2 font-bold tracking-tight">
-            <GooglyEyes size={24} />
-            <span>ALR</span>
-          </Link>
+          <CutmMark variant="compact" title="ALR" subtitle="CUTM" priority />
           <Link href="/" className="btn-ghost !py-2 !px-4 text-sm">
             Back to home
           </Link>

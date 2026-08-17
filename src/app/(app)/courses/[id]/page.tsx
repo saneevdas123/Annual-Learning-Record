@@ -4,12 +4,22 @@ import { requireUser } from '@/lib/session';
 import { db } from '@/lib/db';
 import { COMBINATIONS, requiredRecordTypes, RECORD_TYPES, type RecordType } from '@/lib/domain';
 import { PageHead, Badge, SealDisc } from '@/components/ui';
+import { AppTabs } from '@/components/AppTabs';
+import { assertCanViewCourse } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
-export default async function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function CourseDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
+  const { tab: rawTab } = await searchParams;
+  if (!(await assertCanViewCourse(user, id))) notFound();
 
   const course = await db.course.findUnique({
     where: { id },
@@ -25,6 +35,7 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ i
   const combo = COMBINATIONS[course.combinationCode as keyof typeof COMBINATIONS];
   const reqs = requiredRecordTypes(course.combinationCode as never);
   const isStudent = user.role === 'STUDENT';
+  const tab = !isStudent && rawTab === 'students' ? 'students' : 'records';
 
   const myRecords = isStudent
     ? await db.learningRecord.findMany({
@@ -56,8 +67,19 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ i
         action={<Badge tone="blue">{combo?.label ?? course.combinationCode}</Badge>}
       />
 
+      {!isStudent ? (
+        <AppTabs
+          active={tab}
+          tabs={[
+            { key: 'records', label: 'Required records', href: `/courses/${course.id}`, count: reqs.length },
+            { key: 'students', label: 'Students', href: `/courses/${course.id}?tab=students`, count: roster.length },
+          ]}
+        />
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          {tab === 'records' && (
           <section className="card p-5">
             <h2 className="text-lg font-bold text-ink">Required learning records</h2>
             <p className="mt-1 text-sm text-ink/55">
@@ -101,8 +123,9 @@ export default async function CourseDetailPage({ params }: { params: Promise<{ i
               })}
             </div>
           </section>
+          )}
 
-          {!isStudent && (
+          {tab === 'students' && (
             <section className="card p-5">
               <div className="flex items-center justify-between">
                 <h2 className="text-lg font-bold text-ink">Enrolled students</h2>

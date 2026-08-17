@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { ROLE_LABELS } from '@/lib/domain';
 import { ConfirmDialog } from '@/components/ui';
-import GooglyEyes from '@/components/GooglyEyes';
+import { CutmLogo, CutmMark } from '@/components/CutmMark';
 import { NotificationBell, type Notice } from '@/components/NotificationBell';
 import { logoutAction } from '@/app/(auth)/actions';
 import { initials } from '@/lib/utils';
@@ -274,14 +274,19 @@ export default function Shell({
     <div className="shell min-h-screen flex bg-cream">
       <aside className="shell-aside hidden md:flex no-print">
         <div className="shell-brand">
-          <Link href="/" className="shell-brand-link">
-            <GooglyEyes size={22} />
-            <span className="shell-brand-title">ALR</span>
-          </Link>
+          <CutmMark variant="sidebar" title="ALR" subtitle="Learning Record" priority />
           <div className="shell-brand-role">{ROLE_LABELS[role] || role}</div>
         </div>
         <NavList nav={nav} pathname={pathname} />
         <div className="shell-aside-foot">
+          <div className="mb-3 flex items-center gap-2 px-1">
+            <span className="inline-flex rounded-lg border border-cream/20 bg-cream p-0.5">
+              <CutmLogo height={22} />
+            </span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-cream/45">
+              Centurion University
+            </span>
+          </div>
           <button type="button" className="shell-logout" onClick={askLogout}>
             <Icon name="logout" className="w-4 h-4" />
             Sign out
@@ -301,8 +306,7 @@ export default function Shell({
             <div className="shell-brand flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <Link href="/" className="shell-brand-link" onClick={() => setMobileOpen(false)}>
-                  <GooglyEyes size={22} />
-                  <span className="shell-brand-title">ALR</span>
+                  <CutmMark variant="sidebar" href={null} title="ALR" subtitle="Learning Record" />
                 </Link>
                 <div className="shell-brand-role">{ROLE_LABELS[role] || role}</div>
               </div>
@@ -317,7 +321,12 @@ export default function Shell({
             </div>
             <NavList nav={nav} pathname={pathname} onNavigate={() => setMobileOpen(false)} />
             <div className="shell-aside-foot">
-              <div className="text-xs text-cream/55 px-1 mb-2 truncate">{name}</div>
+              <div className="mb-2 flex items-center gap-2 px-1">
+                <span className="inline-flex rounded-lg border border-cream/20 bg-cream p-0.5">
+                  <CutmLogo height={20} />
+                </span>
+                <span className="text-xs text-cream/55 truncate">{name}</span>
+              </div>
               <button type="button" className="shell-logout" onClick={askLogout}>
                 <Icon name="logout" className="w-4 h-4" />
                 Sign out
@@ -338,18 +347,24 @@ export default function Shell({
           >
             <Icon name="menu" />
           </button>
-          <Link href="/" className="md:hidden inline-flex items-center gap-1.5 font-bold text-ink tracking-tight min-w-0">
-            <GooglyEyes size={20} />
-            <span className="truncate">ALR</span>
-          </Link>
-          <div className="hidden md:block text-sm font-semibold text-ink/45 tracking-tight">
-            Centurion University
+          <CutmMark variant="compact" className="md:hidden" title="ALR" />
+          <div className="hidden md:flex items-center gap-2 text-sm font-semibold text-ink/55 tracking-tight">
+            <CutmLogo height={22} />
+            <span>Centurion University</span>
           </div>
           <div className="ml-auto flex items-center gap-2">
             <NotificationBell items={notices} />
             <UserMenu role={role} name={name} onLogout={askLogout} />
           </div>
         </header>
+        <div className="print-brand hidden print:flex items-center gap-3 border-b-2 border-ink pb-3 mb-4">
+          <CutmLogo height={52} />
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wider text-ink/45">CUTM</p>
+            <p className="font-bold text-ink">Annual Learning Record</p>
+            <p className="text-xs text-ink/55">Centurion University of Technology and Management</p>
+          </div>
+        </div>
         <div className="shell-content p-3 sm:p-5 md:p-6">{children}</div>
       </main>
 

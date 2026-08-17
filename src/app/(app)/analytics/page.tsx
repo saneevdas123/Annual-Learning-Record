@@ -3,13 +3,20 @@ import { db } from '@/lib/db';
 import { getAnalyticsOverview } from '@/lib/queries';
 import { RECORD_TYPES, RECORD_STATUS_LABELS, type RecordType } from '@/lib/domain';
 import { PageHead, Stat } from '@/components/ui';
+import { AppTabs } from '@/components/AppTabs';
 import { CategoryBarChart } from '@/components/AnalyticsCharts';
 import { recordOrgWhere, studentOrgWhere } from '@/lib/access';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AnalyticsPage() {
+export default async function AnalyticsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const user = await requireRole('HOD', 'DEAN', 'ADMIN');
+  const { tab: rawTab } = await searchParams;
+  const tab = ['type', 'status', 'campus', 'integrity'].includes(rawTab ?? '') ? rawTab! : 'type';
   const ov = await getAnalyticsOverview(user);
 
   const campuses = await db.campus.findMany({ select: { id: true, name: true } });
@@ -53,26 +60,41 @@ export default async function AnalyticsPage() {
         <Stat tone="amber" label="Credits posted" value={creditsAgg._sum.credits ?? 0} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <AppTabs
+        active={tab}
+        tabs={[
+          { key: 'type', label: 'By type', href: '/analytics?tab=type', count: byType.reduce((s, r) => s + r.value, 0) },
+          { key: 'status', label: 'By status', href: '/analytics?tab=status', count: byStatus.reduce((s, r) => s + r.value, 0) },
+          { key: 'campus', label: 'By campus', href: '/analytics?tab=campus', count: byCampus.length },
+          { key: 'integrity', label: 'Integrity', href: '/analytics?tab=integrity', count: plagiarismOpen },
+        ]}
+      />
+
+      {tab === 'type' && (
         <section className="card p-5">
           <h2 className="text-lg font-bold text-ink">Records by type</h2>
           <p className="mb-2 text-sm text-ink/55">Across all twelve subject configurations.</p>
           <CategoryBarChart data={byType} />
         </section>
+      )}
 
+      {tab === 'status' && (
         <section className="card p-5">
           <h2 className="text-lg font-bold text-ink">Records by status</h2>
           <p className="mb-2 text-sm text-ink/55">Where records sit in the sign-off pipeline.</p>
           <CategoryBarChart data={byStatus} />
         </section>
+      )}
 
-        <section className="card p-5 lg:col-span-2">
+      {tab === 'campus' && (
+        <section className="card p-5">
           <h2 className="text-lg font-bold text-ink">Records by campus</h2>
           <p className="mb-2 text-sm text-ink/55">Filterable evidence base across the six campuses.</p>
           <CategoryBarChart data={byCampus} />
         </section>
-      </div>
+      )}
 
+      {tab === 'integrity' && (
       <section className="card p-5">
         <h2 className="text-lg font-bold text-ink">Integrity &amp; accreditation</h2>
         <div className="mt-3 grid gap-4 sm:grid-cols-3">
@@ -94,6 +116,7 @@ export default async function AnalyticsPage() {
           </div>
         </div>
       </section>
+      )}
     </div>
   );
 }

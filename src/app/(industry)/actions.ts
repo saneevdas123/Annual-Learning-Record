@@ -3,8 +3,14 @@
 import { revalidatePath } from 'next/cache';
 import { db } from '@/lib/db';
 import { fail, ok } from '@/lib/action-result';
+import { assertRateLimit, clientKey } from '@/lib/rate-limit';
 
 export async function submitIndustryAssessment(formData: FormData): Promise<void> {
+  try {
+    assertRateLimit(await clientKey('industry'), 10, 60_000);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'Too many attempts.');
+  }
   const token = String(formData.get('token'));
   const externalScore = Number(formData.get('externalScore') ?? 0) || 0;
   const feedback = String(formData.get('feedback') ?? '');

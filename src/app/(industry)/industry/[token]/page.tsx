@@ -2,7 +2,8 @@ import { db } from '@/lib/db';
 import { DELIVERABLE_LABEL } from '@/lib/labels';
 import { submitIndustryAssessment } from '../../actions';
 import { fmtDate } from '@/lib/utils';
-import GooglyEyes from '@/components/GooglyEyes';
+import { CutmMark } from '@/components/CutmMark';
+import { ActionForm } from '@/components/ActionForm';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,12 +25,9 @@ export default async function IndustryTokenPage({ params }: { params: Promise<{ 
     <main className="min-h-screen bg-cream text-ink px-4 py-12">
       <div className="mx-auto flex max-w-xl flex-col">
         <div className="mb-6 text-center">
-          <div className="inline-flex items-center gap-2 font-bold">
-            <GooglyEyes size={22} />
-            ALR
-          </div>
+          <CutmMark variant="stack" href="/" title="ALR" subtitle="Centurion University" />
           <p className="mt-3 text-xs font-bold uppercase tracking-[0.12em] text-ink/45">
-            Centurion University · External Assessment
+            External Assessment
           </p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">Industry supervisor review</h1>
         </div>
@@ -60,7 +58,7 @@ export default async function IndustryTokenPage({ params }: { params: Promise<{ 
                 {deliverable.candidates.map((c) => c.user.name).join(', ') || '—'}
               </p>
             </div>
-            <form action={submitIndustryAssessment} className="p-5 space-y-4">
+            <ActionForm action={submitIndustryAssessment} success="Assessment submitted." className="p-5 space-y-4">
               <input type="hidden" name="token" value={token} />
               <div>
                 <label className="label">External score (out of 100)</label>
@@ -76,12 +74,15 @@ export default async function IndustryTokenPage({ params }: { params: Promise<{ 
                 />
               </div>
               <button className="btn-primary w-full">Submit assessment</button>
-            </form>
+            </ActionForm>
             <p className="px-5 pb-4 text-center text-[10px] font-semibold uppercase tracking-wide text-ink/40">
               Secure tokenized link · no account required · expires {fmtDate(rec?.expiresAt)}
             </p>
           </div>
         )}
+        <div className="mt-8 flex justify-center">
+          <CutmMark variant="compact" href="/" title="ALR" subtitle="CUTM" />
+        </div>
       </div>
     </main>
   );

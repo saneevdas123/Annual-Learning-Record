@@ -2,7 +2,7 @@
 
 A full-stack platform for **Centurion University of Technology and Management (CUTM)** that digitises the Annual Learning Record: it **traces every student's learning** course-by-course, evaluates it through three committee tiers, and carries it into credit and accreditation exports.
 
-Built as a single deployable **Next.js 14 (App Router)** application — frontend and backend together — on **PostgreSQL** via **Prisma**, designed to be cost-optimised and horizontally scalable.
+Built as a single deployable **Next.js 16 (App Router)** application — frontend and backend together — on **PostgreSQL** via **Prisma**, designed to be cost-optimised and horizontally scalable.
 
 ---
 
@@ -19,17 +19,18 @@ The platform is modelled directly on the institutional review + Learning Record 
 | **Credit ledger** — 1 credit/year, Compulsory Basket | `CreditLedgerEntry`; posted automatically on annual sign-off; student ledger + progress view. |
 | **Distinct roles** — Student, Faculty (CO), Mentor (PO/PSO), HoD, Dean, Admin, Industry Supervisor | Role-based navigation, scoping, and permissions throughout. |
 | **Sequential, timestamped sign-off chains** | `SignoffStep` (Faculty → Mentor → HoD), rendered as a live chain on each record. |
-| **Normalization + AI scoring with human override / appeal** | Optional AI advisory score (provider-agnostic); faculty score always authoritative; students can file logged appeals. |
+| **Normalization + AI scoring with human override / appeal** | Optional LangGraph advisory (extract → score → critique on a cheap model); faculty score always authoritative; students can file logged appeals. |
 | **Plagiarism thresholds per document type** (Thesis 20%, others 30%) | `PLAGIARISM_THRESHOLDS`, deliverable + case models. |
 | **Tokenised industry-supervisor access (no login)** | `/industry/[token]` public route; one-time signed link for external assessment. |
 | **MOOC as first-class, 6-campus filtering, NAAC/NBA evidence** | MOOC configurations; campus dimension on every course; analytics dashboards. |
-| **E-declaration on first login, optional MFA, books/manuals field** | Profile page (declaration + MFA); `booksReferred` on records. |
+| **E-declaration, password change, books/manuals field** | Profile page (declaration + password); first-login change after provision; `booksReferred` on records. |
 
 ---
 
 ## Tech stack
 
-- **Next.js 14** (App Router, Server Components, Server Actions) — one codebase for UI + API
+- **Next.js 16** (App Router, Server Components, Server Actions) — one codebase for UI + API
+- **LangChain / LangGraph** — optional 3-agent advisory scoring (cheap model, short tokens)
 - **PostgreSQL + Prisma** — relational model fits the workflow/sign-off domain
 - **Auth**: stateless JWT in an httpOnly cookie (`jose` + `bcryptjs`) — no session store to scale
 - **Tailwind CSS** — custom "Registrar's Ledger" design system
@@ -130,5 +131,5 @@ src/lib/                  # auth, session, db (lazy Prisma), ai, queries, env
 src/app/(auth)/           # login / register
 src/app/(app)/            # dashboard, records, courses, review, evaluations, credits, analytics, admin, profile
 src/app/(industry)/       # tokenised external-supervisor route (no login)
-src/middleware.ts         # edge auth guard
+src/proxy.ts              # Next.js 16 auth proxy
 ```

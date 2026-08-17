@@ -6,7 +6,7 @@ import { RECORD_TYPES, ROLE_LABELS, type RecordType } from '@/lib/domain';
 import { aiEnabled } from '@/lib/env';
 import { SealDisc, Badge, PageHead, Progress } from '@/components/ui';
 import { fmtDate } from '@/lib/utils';
-import { canActOnStep, canReviewRecord, currentSignoffStep } from '@/lib/access';
+import { canActOnStep, canReviewRecord, canViewRecord, currentSignoffStep } from '@/lib/access';
 import {
   addEntry,
   submitRecord,
@@ -15,12 +15,21 @@ import {
   fileAppeal,
   resolveAppeal,
 } from '../actions';
+import { ActionForm } from '@/components/ActionForm';
+import { AppTabs } from '@/components/AppTabs';
 
 export const dynamic = 'force-dynamic';
 
-export default async function RecordDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function RecordDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ tab?: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
+  const { tab: rawTab } = await searchParams;
 
   const record = await db.learningRecord.findUnique({
     where: { id },
@@ -35,6 +44,7 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
     },
   });
   if (!record) notFound();
+  if (!canViewRecord(user, record)) notFound();
 
   const steps = await db.signoffStep.findMany({
     where: { target: 'LEARNING_RECORD', targetId: record.id },
@@ -56,6 +66,14 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
       : 0;
 
   const openAppeals = record.appeals.filter((a) => a.status === 'OPEN');
+  const showReview = assigned || record.facultyScore != null;
+  const showAppeals = record.appeals.length > 0 || (isOwner && !!record.reviewedById);
+  const tab =
+    rawTab === 'review' && showReview
+      ? 'review'
+      : rawTab === 'appeals' && showAppeals
+        ? 'appeals'
+        : 'record';
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -73,8 +91,32 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
         action={<SealDisc status={record.status} />}
       />
 
+      {(showReview || showAppeals) && (
+        <AppTabs
+          active={tab}
+          tabs={[
+            { key: 'record', label: 'Record', href: `/records/${record.id}` },
+            ...(showReview
+              ? [{ key: 'review', label: 'Review', href: `/records/${record.id}?tab=review` }]
+              : []),
+            ...(showAppeals
+              ? [
+                  {
+                    key: 'appeals',
+                    label: 'Appeals',
+                    href: `/records/${record.id}?tab=appeals`,
+                    count: record.appeals.length,
+                  },
+                ]
+              : []),
+          ]}
+        />
+      )}
+
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
+          {tab === 'record' && (
+          <div className="space-y-6">
           <section className="card p-5">
             <h2 className="text-lg font-bold text-ink">Overview</h2>
             {record.description ? (
@@ -143,7 +185,7 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
             )}
 
             {canEdit && (
-              <form action={addEntry} className="mt-4 space-y-3 border-t border-ink/10 pt-4">
+              <ActionForm action={addEntry} success="Entry saved." className="mt-4 space-y-3 border-t border-ink/10 pt-4">
                 <input type="hidden" name="recordId" value={record.id} />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div>
@@ -186,13 +228,15 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                   </div>
                 </div>
                 <div className="flex justify-end">
-                  <button className="btn-ghost">Add entry</button>
+                  <button className="btn-primary">Add entry</button>
                 </div>
-              </form>
+              </ActionForm>
             )}
           </section>
+          </div>
+          )}
 
-          {(record.aiSummary || assigned) && (
+          {tab === 'review' && (
             <section className="card p-5">
               <h2 className="text-lg font-bold text-ink">Evaluation</h2>
 
@@ -200,10 +244,11 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                 <div className="ui-callout mt-3 p-3">
                   <p className="text-[11px] font-bold uppercase tracking-wide text-ink/55">
                     AI advisory · score {record.aiScore}/{spec.perEntryMax}
+                    {record.aiModel ? ` · ${record.aiModel}` : ''}
                   </p>
                   <p className="mt-1 text-sm text-ink/70">{record.aiSummary}</p>
                   <p className="mt-1 text-[11px] text-ink/45">
-                    Advisory only — the faculty score below is authoritative and always overrides AI.
+                    Three-agent pass (evidence → rubric → critic). Advisory only — faculty always overrides.
                   </p>
                 </div>
               )}
@@ -215,14 +260,16 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                       Current step: {ROLE_LABELS[step.role] ?? step.role}
                     </p>
                   )}
-                  {aiEnabled && !record.aiSummary && (
-                    <form action={requestAiScore}>
+                  {aiEnabled && (
+                    <ActionForm action={requestAiScore} success="Advisory score ready.">
                       <input type="hidden" name="recordId" value={record.id} />
-                      <button className="btn-ghost text-xs">Request AI advisory score</button>
-                    </form>
+                      <button className="btn-ghost text-xs">
+                        {record.aiSummary ? 'Re-run advisory score' : 'Request AI advisory score'}
+                      </button>
+                    </ActionForm>
                   )}
 
-                  <form action={reviewRecord} className="space-y-3 border-t border-ink/10 pt-4">
+                  <ActionForm action={reviewRecord} success="Review saved." className="space-y-3 border-t border-ink/10 pt-4">
                     <input type="hidden" name="recordId" value={record.id} />
                     <div className="grid gap-3 sm:grid-cols-2">
                       {step?.role === 'FACULTY' && (
@@ -264,7 +311,7 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                     <div className="flex justify-end">
                       <button className="btn-primary">Record decision</button>
                     </div>
-                  </form>
+                  </ActionForm>
                 </div>
               )}
 
@@ -293,11 +340,13 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
             </section>
           )}
 
+          {tab === 'appeals' && (
+          <div className="space-y-6">
           {openAppeals.length > 0 && assigned && (
             <section className="card p-5">
               <h2 className="text-lg font-bold text-ink">Open appeal</h2>
               {openAppeals.map((a) => (
-                <form key={a.id} action={resolveAppeal} className="mt-3 space-y-3">
+                <ActionForm key={a.id} action={resolveAppeal} success="Appeal resolved." className="mt-3 space-y-3">
                   <input type="hidden" name="appealId" value={a.id} />
                   <p className="ui-nest p-3 text-sm text-ink/70">{a.reason}</p>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -317,7 +366,7 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                   <div className="flex justify-end">
                     <button className="btn-primary">Resolve appeal</button>
                   </div>
-                </form>
+                </ActionForm>
               ))}
             </section>
           )}
@@ -342,7 +391,7 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                 </ul>
               )}
               {record.appeals.every((a) => a.status !== 'OPEN') && (
-                <form action={fileAppeal} className="mt-3 space-y-3">
+                <ActionForm action={fileAppeal} success="Appeal filed." className="mt-3 space-y-3">
                   <input type="hidden" name="recordId" value={record.id} />
                   <textarea
                     name="reason"
@@ -353,9 +402,11 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                   <div className="flex justify-end">
                     <button className="btn-ghost">Submit appeal</button>
                   </div>
-                </form>
+                </ActionForm>
               )}
             </section>
+          )}
+          </div>
           )}
         </div>
 
@@ -371,12 +422,12 @@ export default async function RecordDetailPage({ params }: { params: Promise<{ i
                   Accept the declaration on your profile first.
                 </p>
               )}
-              <form action={submitRecord} className="mt-3">
+              <ActionForm action={submitRecord} success="Submitted for review." className="mt-3">
                 <input type="hidden" name="recordId" value={record.id} />
                 <button className="btn-primary w-full" disabled={!user.eDeclarationAt}>
                   Submit for review
                 </button>
-              </form>
+              </ActionForm>
             </section>
           )}
 

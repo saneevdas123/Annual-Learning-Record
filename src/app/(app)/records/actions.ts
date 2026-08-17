@@ -13,10 +13,19 @@ import {
   canActOnStep,
   canReviewRecord,
   currentSignoffStep,
+  findActorForStep,
   loadRecordForAccess,
   recordTypeAllowedForCourse,
 } from '@/lib/access';
 import { fail, ok } from '@/lib/action-result';
+import {
+  appealFiledEmail,
+  appealResolvedEmail,
+  recordDecisionEmail,
+  recordSubmittedEmail,
+  sendMailSafe,
+} from '@/lib/mailer';
+import { getSiteUrl } from '@/lib/site';
 
 const createSchema = z.object({
   courseId: z.string().min(1),
@@ -151,8 +160,22 @@ export async function submitRecord(formData: FormData): Promise<void> {
       });
     });
 
+    const faculty = await db.user.findUnique({
+      where: { id: record.course.facultyId },
+      select: { name: true, email: true },
+    });
+    const mail = recordSubmittedEmail({
+      reviewerName: faculty?.name,
+      studentName: record.student.name,
+      title: record.title,
+      courseLabel: `${record.course.code} · ${record.course.title}`,
+      dashboardUrl: `${getSiteUrl()}/records/${recordId}`,
+    });
+    await sendMailSafe({ to: faculty?.email, ...mail });
+
     revalidatePath(`/records/${recordId}`);
     revalidatePath('/records');
+    revalidatePath('/review');
     return ok();
   } catch (e) {
     if (e && typeof e === 'object' && 'digest' in e) throw e;
@@ -176,20 +199,24 @@ export async function requestAiScore(formData: FormData): Promise<void> {
   });
   if (!full) return fail('Record not found.');
 
-  const result = await aiScoreRecord({
-    recordTypeLabel: spec.label,
-    title: full.title,
-    description: full.description,
-    entries: full.entries.map((e) => ({ title: e.title, content: e.content })),
-    maxScore: spec.perEntryMax,
-  });
-  if (result) {
+  try {
+    const result = await aiScoreRecord({
+      recordTypeLabel: spec.label,
+      title: full.title,
+      description: full.description,
+      entries: full.entries.map((e) => ({ title: e.title, content: e.content, rawScore: e.rawScore })),
+      maxScore: spec.perEntryMax,
+      rubric: spec.rubric,
+      normalization: spec.normalization,
+    });
     await db.learningRecord.update({
       where: { id: recordId },
-      data: { aiScore: result.score, aiSummary: result.summary, aiModel: 'configured-provider' },
+      data: { aiScore: result.score, aiSummary: result.summary, aiModel: result.model },
     });
-    revalidatePath(`/records/${recordId}`);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : 'AI scoring failed.');
   }
+  revalidatePath(`/records/${recordId}`);
   return ok();
 }
 
@@ -263,6 +290,18 @@ export async function reviewRecord(formData: FormData): Promise<void> {
         },
       }),
     ]);
+    const student = await db.user.findUnique({
+      where: { id: record.studentId },
+      select: { name: true, email: true },
+    });
+    const returned = recordDecisionEmail({
+      studentName: student?.name,
+      title: record.title,
+      decision: parsed.data.decision,
+      noteText: parsed.data.mentorNote,
+      dashboardUrl: `${getSiteUrl()}/records/${record.id}`,
+    });
+    await sendMailSafe({ to: student?.email, ...returned });
   } else {
     const remaining = await db.signoffStep.count({
       where: {
@@ -303,6 +342,47 @@ export async function reviewRecord(formData: FormData): Promise<void> {
         },
       }),
     ]);
+
+    const student = await db.user.findUnique({
+      where: { id: record.studentId },
+      select: { name: true, email: true },
+    });
+    const decisionMail = recordDecisionEmail({
+      studentName: student?.name,
+      title: record.title,
+      decision: final ? 'APPROVED' : 'UNDER_REVIEW',
+      noteText: parsed.data.mentorNote,
+      dashboardUrl: `${getSiteUrl()}/records/${record.id}`,
+    });
+    await sendMailSafe({ to: student?.email, ...decisionMail });
+
+    if (!final && record.student && record.course) {
+      const nextStep = await currentSignoffStep(record.id);
+      if (nextStep) {
+        const next = await findActorForStep(
+          { course: record.course, student: record.student },
+          nextStep.role
+        );
+        if (next) {
+          await db.notification.create({
+            data: {
+              userId: next.id,
+              title: 'Record waiting on your sign-off',
+              message: `"${record.title}" is at the ${nextStep.role.toLowerCase()} step.`,
+              link: `/records/${record.id}`,
+            },
+          });
+          const nextMail = recordSubmittedEmail({
+            reviewerName: next.name,
+            studentName: record.student.name ?? 'A student',
+            title: record.title,
+            courseLabel: nextStep.role,
+            dashboardUrl: `${getSiteUrl()}/records/${record.id}`,
+          });
+          await sendMailSafe({ to: next.email, ...nextMail });
+        }
+      }
+    }
   }
 
   revalidatePath(`/records/${record.id}`);
@@ -315,7 +395,10 @@ export async function fileAppeal(formData: FormData): Promise<void> {
   const recordId = String(formData.get('recordId'));
   const reason = String(formData.get('reason') ?? '').trim();
   if (!reason) return fail('Explain why you are appealing.');
-  const record = await db.learningRecord.findUnique({ where: { id: recordId } });
+  const record = await db.learningRecord.findUnique({
+    where: { id: recordId },
+    include: { course: true, student: { select: { name: true } } },
+  });
   if (!record || record.studentId !== user.id) return fail('Record not found.');
 
   const open = await db.scoreAppeal.findFirst({ where: { recordId, status: 'OPEN' } });
@@ -324,15 +407,30 @@ export async function fileAppeal(formData: FormData): Promise<void> {
   await db.scoreAppeal.create({
     data: { recordId, studentId: user.id, reason },
   });
-  await db.notification.create({
-    data: {
-      userId: record.reviewedById ?? user.id,
-      title: 'Score appeal filed',
-      message: `A student appealed the score on "${record.title}".`,
-      link: `/records/${recordId}`,
-    },
+  const faculty = await db.user.findUnique({
+    where: { id: record.course.facultyId },
+    select: { id: true, name: true, email: true },
   });
+  if (faculty) {
+    await db.notification.create({
+      data: {
+        userId: faculty.id,
+        title: 'Score appeal filed',
+        message: `${record.student.name} appealed the score on "${record.title}".`,
+        link: `/records/${recordId}`,
+      },
+    });
+    const mail = appealFiledEmail({
+      reviewerName: faculty.name,
+      studentName: record.student.name,
+      title: record.title,
+      reason,
+      dashboardUrl: `${getSiteUrl()}/records/${recordId}`,
+    });
+    await sendMailSafe({ to: faculty.email, ...mail });
+  }
   revalidatePath(`/records/${recordId}`);
+  revalidatePath('/review');
   return ok();
 }
 
@@ -394,6 +492,18 @@ export async function resolveAppeal(formData: FormData): Promise<void> {
       },
     }),
   ]);
+
+  const student = await db.user.findUnique({
+    where: { id: appeal.studentId },
+    select: { name: true, email: true },
+  });
+  const mail = appealResolvedEmail({
+    studentName: student?.name,
+    title: appeal.record.title,
+    decision,
+    dashboardUrl: `${getSiteUrl()}/records/${appeal.recordId}`,
+  });
+  await sendMailSafe({ to: student?.email, ...mail });
 
   revalidatePath(`/records/${appeal.recordId}`);
   revalidatePath('/review');

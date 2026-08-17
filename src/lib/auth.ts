@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { env } from './env';
@@ -12,7 +13,18 @@ export interface SessionPayload {
   sub: string; // user id
   role: string;
   name: string;
+  mustChangePassword?: boolean;
   [key: string]: unknown;
+}
+
+export function generateTempPassword() {
+  return `Cutm-${randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
+export function allowedUniversityEmail(email: string) {
+  const domain = (process.env.ALLOWED_EMAIL_DOMAIN ?? 'cutm.ac.in').trim().toLowerCase();
+  if (!domain) return true;
+  return email.toLowerCase().endsWith(`@${domain}`);
 }
 
 export async function hashPassword(plain: string): Promise<string> {

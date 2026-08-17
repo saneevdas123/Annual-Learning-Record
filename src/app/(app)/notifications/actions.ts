@@ -13,7 +13,7 @@ export async function markNotificationRead(formData: FormData): Promise<void> {
     where: { id, userId: user.id },
     data: { read: true },
   });
-  revalidatePath('/dashboard');
+  revalidatePath('/', 'layout');
   return ok();
 }
 
@@ -23,6 +23,6 @@ export async function markAllNotificationsRead(): Promise<void> {
     where: { userId: user.id, read: false },
     data: { read: true },
   });
-  revalidatePath('/dashboard');
+  revalidatePath('/', 'layout');
   return ok();
 }

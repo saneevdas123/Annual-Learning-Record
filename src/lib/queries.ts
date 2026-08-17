@@ -1,6 +1,6 @@
 import { db } from './db';
 import { RECORD_TYPES, COMBINATIONS, requiredRecordTypes, type RecordType } from './domain';
-import { recordOrgWhere, studentOrgWhere } from './access';
+import { canActOnStep, recordOrgWhere, studentOrgWhere } from './access';
 import type { CurrentUser } from './session';
 
 export interface CourseTraceRow {
@@ -104,30 +104,49 @@ export async function getReviewQueue(user: CurrentUser) {
     appeals: { where: { status: 'OPEN' }, select: { id: true } },
   } as const;
 
-  if (user.role === 'FACULTY') {
-    return db.learningRecord.findMany({
-      where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, course: { facultyId: user.id } },
-      include,
-      orderBy: { submittedAt: 'asc' },
-      take: 100,
-    });
-  }
-  if (user.role === 'MENTOR') {
-    return db.learningRecord.findMany({
-      where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, student: { mentorId: user.id } },
-      include,
-      orderBy: { submittedAt: 'asc' },
-      take: 100,
-    });
-  }
-  return db.learningRecord.findMany({
+  const records =
+    user.role === 'FACULTY'
+      ? await db.learningRecord.findMany({
+          where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, course: { facultyId: user.id } },
+          include,
+          orderBy: { submittedAt: 'asc' },
+          take: 100,
+        })
+      : user.role === 'MENTOR'
+        ? await db.learningRecord.findMany({
+            where: { status: { in: ['SUBMITTED', 'UNDER_REVIEW'] }, student: { mentorId: user.id } },
+            include,
+            orderBy: { submittedAt: 'asc' },
+            take: 100,
+          })
+        : await db.learningRecord.findMany({
+            where: {
+              status: { in: ['SUBMITTED', 'UNDER_REVIEW'] },
+              ...recordOrgWhere(user),
+            },
+            include,
+            orderBy: { submittedAt: 'asc' },
+            take: 100,
+          });
+
+  if (records.length === 0) return records;
+
+  const steps = await db.signoffStep.findMany({
     where: {
-      status: { in: ['SUBMITTED', 'UNDER_REVIEW'] },
-      ...recordOrgWhere(user),
+      target: 'LEARNING_RECORD',
+      targetId: { in: records.map((r) => r.id) },
+      status: 'PENDING',
     },
-    include,
-    orderBy: { submittedAt: 'asc' },
-    take: 100,
+    orderBy: { stepOrder: 'asc' },
+  });
+  const current = new Map<string, (typeof steps)[number]>();
+  for (const step of steps) {
+    if (!current.has(step.targetId)) current.set(step.targetId, step);
+  }
+
+  return records.filter((record) => {
+    const step = current.get(record.id);
+    return !!step && canActOnStep(user, step.role);
   });
 }
 
