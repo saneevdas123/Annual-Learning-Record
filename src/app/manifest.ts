@@ -13,7 +13,8 @@ export default function manifest(): MetadataRoute.Manifest {
     lang: 'en-IN',
     categories: ['education', 'productivity'],
     icons: [
-      { src: '/icon', type: 'image/png', sizes: '32x32' },
+      { src: '/favicon.png', type: 'image/png', sizes: '32x32' },
+      { src: '/icon', type: 'image/png', sizes: '192x192' },
       { src: '/apple-icon', type: 'image/png', sizes: '180x180' },
     ],
   };

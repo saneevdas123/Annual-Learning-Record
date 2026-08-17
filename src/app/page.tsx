@@ -31,7 +31,7 @@ export default async function Home() {
         operatingSystem: 'Web',
         url: getSiteUrl(),
         description: SITE.description,
-        image: `${getSiteUrl()}/opengraph-image`,
+        image: `${getSiteUrl()}/og.png`,
         provider: {
           '@type': 'CollegeOrUniversity',
           name: SITE.org,

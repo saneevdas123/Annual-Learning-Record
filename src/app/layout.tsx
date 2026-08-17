@@ -33,11 +33,17 @@ export const metadata: Metadata = {
     siteName: SITE.appName,
     title: `${SITE.shortName} — Annual Learning Record | ${SITE.orgShort}`,
     description: SITE.description,
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: `${SITE.appName} — ${SITE.org}` }],
   },
   twitter: {
     card: 'summary_large_image',
     title: `${SITE.shortName} — Annual Learning Record`,
     description: SITE.description,
+    images: ['/og.png'],
+  },
+  icons: {
+    icon: [{ url: '/favicon.png', type: 'image/png', sizes: '32x32' }],
+    apple: [{ url: '/apple-icon', type: 'image/png', sizes: '180x180' }],
   },
   appleWebApp: {
     capable: true,
