@@ -1,40 +1,25 @@
 import { PrismaClient } from '@prisma/client';
 
-// Reuse a single PrismaClient across hot-reloads and serverless invocations.
-// Cost/scale note: one pooled client per instance keeps DB connections bounded;
-// point DATABASE_URL at a pooler (PgBouncer / Neon / Supabase pooling) in prod.
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-function datasourceUrl() {
-  const url = process.env.DATABASE_URL ?? '';
-  if (!url || /[?&]connection_limit=/.test(url)) return url;
-  const sep = url.includes('?') ? '&' : '?';
-  const limit = process.env.NODE_ENV === 'production' ? '5' : '3';
-  return `${url}${sep}connection_limit=${limit}&pool_timeout=15`;
+function withOneConnection(url: string) {
+  if (!url) return url;
+  const withoutLimit = url
+    .replace(/([?&])connection_limit=\d+/g, '$1')
+    .replace(/[?&]pool_timeout=\d+/g, '')
+    .replace(/\?&/, '?')
+    .replace(/[?&]$/, '');
+  const sep = withoutLimit.includes('?') ? '&' : '?';
+  return `${withoutLimit}${sep}connection_limit=1&pool_timeout=20`;
 }
 
-function create() {
+function createClient() {
   return new PrismaClient({
-    datasources: { db: { url: datasourceUrl() } },
+    datasources: { db: { url: withOneConnection(process.env.DATABASE_URL ?? '') } },
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
 }
 
-let client: PrismaClient | undefined;
-function getClient(): PrismaClient {
-  if (!client) {
-    client = globalForPrisma.prisma ?? create();
-    if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = client;
-  }
-  return client;
-}
-
-// Lazy proxy: construction is deferred until the first query at request time,
-// so importing `db` never connects (and never throws) during the build step.
-export const db: PrismaClient = new Proxy({} as PrismaClient, {
-  get(_target, prop) {
-    const c = getClient() as unknown as Record<string | symbol, unknown>;
-    const value = c[prop];
-    return typeof value === 'function' ? value.bind(c) : value;
-  },
-});
+/** One PrismaClient for the whole Node process — not per request. */
+export const db: PrismaClient = globalForPrisma.prisma ?? createClient();
+globalForPrisma.prisma = db;
