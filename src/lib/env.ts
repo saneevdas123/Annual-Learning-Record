@@ -1,6 +1,7 @@
 const DEFAULT_SECRET = 'dev-only-insecure-secret-change-me';
 
-function resolveAuthSecret() {
+/** Runtime only — do not call at module load or `next build` will fail in Docker/CI. */
+export function getAuthSecret() {
   const secret = process.env.AUTH_SECRET;
   if (process.env.NODE_ENV === 'production') {
     if (!secret || secret === DEFAULT_SECRET) {
@@ -12,7 +13,9 @@ function resolveAuthSecret() {
 
 export const env = {
   databaseUrl: process.env.DATABASE_URL ?? '',
-  authSecret: resolveAuthSecret(),
+  get authSecret() {
+    return process.env.AUTH_SECRET ?? DEFAULT_SECRET;
+  },
   nodeEnv: process.env.NODE_ENV ?? 'development',
   seedAdminEmail: process.env.SEED_ADMIN_EMAIL ?? 'admin@cutm.ac.in',
   seedAdminPassword: process.env.SEED_ADMIN_PASSWORD ?? 'Admin@12345',

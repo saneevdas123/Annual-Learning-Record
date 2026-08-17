@@ -14,12 +14,28 @@ function withOneConnection(url: string) {
 }
 
 function createClient() {
+  const url = withOneConnection(process.env.DATABASE_URL ?? '');
   return new PrismaClient({
-    datasources: { db: { url: withOneConnection(process.env.DATABASE_URL ?? '') } },
+    ...(url ? { datasources: { db: { url } } } : {}),
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
 }
 
-/** One PrismaClient for the whole Node process — not per request. */
-export const db: PrismaClient = globalForPrisma.prisma ?? createClient();
-globalForPrisma.prisma = db;
+function getClient(): PrismaClient {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createClient();
+  }
+  return globalForPrisma.prisma;
+}
+
+/**
+ * Process-wide singleton. The client is created on the first query so
+ * `next build` / Docker can finish without DATABASE_URL.
+ */
+export const db: PrismaClient = new Proxy({} as PrismaClient, {
+  get(_target, prop) {
+    const client = getClient() as unknown as Record<string | symbol, unknown>;
+    const value = client[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});

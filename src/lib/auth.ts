@@ -1,10 +1,13 @@
 import { randomBytes } from 'crypto';
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
-import { env } from './env';
+import { getAuthSecret } from './env';
 
-const secret = new TextEncoder().encode(env.authSecret);
 const ALG = 'HS256';
+
+function secretKey() {
+  return new TextEncoder().encode(getAuthSecret());
+}
 
 export const SESSION_COOKIE = 'alr_session';
 export const SESSION_MAX_AGE = 60 * 60 * 24 * 7; // 7 days
@@ -40,12 +43,12 @@ export async function createSessionToken(payload: SessionPayload): Promise<strin
     .setProtectedHeader({ alg: ALG })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_MAX_AGE}s`)
-    .sign(secret);
+    .sign(secretKey());
 }
 
 export async function verifySessionToken(token: string): Promise<SessionPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, secretKey());
     return payload as unknown as SessionPayload;
   } catch {
     return null;
